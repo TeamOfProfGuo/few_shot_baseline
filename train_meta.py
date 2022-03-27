@@ -11,7 +11,7 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader
 from tensorboardX import SummaryWriter
 
-import datasets
+import dataset
 import models
 import utils
 import utils.few_shot as fs
@@ -51,52 +51,43 @@ def main(config):
         ep_per_batch = 1
 
     # train
-    train_dataset = datasets.make(config['train_dataset'],
-                                  **config['train_dataset_args'])
-    utils.log('train dataset: {} (x{}), {}'.format(
-            train_dataset[0][0].shape, len(train_dataset),
-            train_dataset.n_classes))
+    train_dataset = dataset.make(config['train_dataset'], **config['train_dataset_args'])   #返回x:tensor[3,80,80],y:int
+    utils.log('train dataset: {} (x{}), {} classes'.format(
+            train_dataset[0][0].shape, len(train_dataset), train_dataset.n_classes))
     if config.get('visualize_datasets'):
         utils.visualize_dataset(train_dataset, 'train_dataset', writer)
     train_sampler = CategoriesSampler(
             train_dataset.label, config['train_batches'],
             n_train_way, n_train_shot + n_query,
-            ep_per_batch=ep_per_batch)
-    train_loader = DataLoader(train_dataset, batch_sampler=train_sampler,
-                              num_workers=8, pin_memory=True)
+            ep_per_batch=ep_per_batch)  # 生成每个batch idx: [320] = 4(ep)*5(way)*16(n_shot+n_query)
+    train_loader = DataLoader(train_dataset, batch_sampler=train_sampler, num_workers=8, pin_memory=True) #共200个batch
 
     # tval
     if config.get('tval_dataset'):
-        tval_dataset = datasets.make(config['tval_dataset'],
-                                     **config['tval_dataset_args'])
-        utils.log('tval dataset: {} (x{}), {}'.format(
-                tval_dataset[0][0].shape, len(tval_dataset),
-                tval_dataset.n_classes))
+        tval_dataset = dataset.make(config['tval_dataset'], **config['tval_dataset_args'])
+        utils.log('tval dataset: {} (x{}), {} classes'.format(
+                tval_dataset[0][0].shape, len(tval_dataset), tval_dataset.n_classes))
         if config.get('visualize_datasets'):
             utils.visualize_dataset(tval_dataset, 'tval_dataset', writer)
         tval_sampler = CategoriesSampler(
                 tval_dataset.label, 200,
                 n_way, n_shot + n_query,
-                ep_per_batch=4)
-        tval_loader = DataLoader(tval_dataset, batch_sampler=tval_sampler,
-                                 num_workers=8, pin_memory=True)
+                ep_per_batch=4) # 生成每个batch idx: [320] = 4*5*(1+15)
+        tval_loader = DataLoader(tval_dataset, batch_sampler=tval_sampler, num_workers=8, pin_memory=True)
     else:
         tval_loader = None
 
     # val
-    val_dataset = datasets.make(config['val_dataset'],
-                                **config['val_dataset_args'])
-    utils.log('val dataset: {} (x{}), {}'.format(
-            val_dataset[0][0].shape, len(val_dataset),
-            val_dataset.n_classes))
+    val_dataset = dataset.make(config['val_dataset'], **config['val_dataset_args'])
+    utils.log('val dataset: {} (x{}), {} classes'.format(
+            val_dataset[0][0].shape, len(val_dataset), val_dataset.n_classes))
     if config.get('visualize_datasets'):
         utils.visualize_dataset(val_dataset, 'val_dataset', writer)
     val_sampler = CategoriesSampler(
             val_dataset.label, 200,
             n_way, n_shot + n_query,
-            ep_per_batch=4)
-    val_loader = DataLoader(val_dataset, batch_sampler=val_sampler,
-                            num_workers=8, pin_memory=True)
+            ep_per_batch=4)  # 生成每个batch idx: [320] = 4*5*(1+15)
+    val_loader = DataLoader(val_dataset, batch_sampler=val_sampler, num_workers=8, pin_memory=True) # 共200个batch
 
 
     ####=========================================== Model and optimizer ===========================================####
@@ -108,7 +99,7 @@ def main(config):
         model = models.make(config['model'], **config['model_args'])
 
         if config.get('load_encoder'):
-            encoder = models.load(torch.load(config['load_encoder'])).encoder
+            encoder = models.load(torch.load(config['load_encoder'])).encoder   # classifier模型with pretrained params
             model.encoder.load_state_dict(encoder.state_dict())
 
     if config.get('_parallel'):
@@ -137,21 +128,21 @@ def main(config):
         timer_epoch.s()
         aves = {k: utils.Averager() for k in aves_keys}
 
-        # train
+        # train 学习 Encoder 和 temperature
         model.train()
         if config.get('freeze_bn'):
             utils.freeze_bn(model) 
         writer.add_scalar('lr', optimizer.param_groups[0]['lr'], epoch)
 
         np.random.seed(epoch)
-        for data, _ in tqdm(train_loader, desc='train', leave=False):
+        for data, _ in tqdm(train_loader, desc='train', leave=False): # data[320,3,80,80],_[320]
             x_shot, x_query = fs.split_shot_query(
                     data.cuda(), n_train_way, n_train_shot, n_query,
-                    ep_per_batch=ep_per_batch)
+                    ep_per_batch=ep_per_batch)  #x_shot:[4,5,1,3,80,80], x_query:[4,75,3,80,80]
             label = fs.make_nk_label(n_train_way, n_query,
-                    ep_per_batch=ep_per_batch).cuda()
+                    ep_per_batch=ep_per_batch).cuda()    #label for query:[300]
 
-            logits = model(x_shot, x_query).view(-1, n_train_way)
+            logits = model(x_shot, x_query).view(-1, n_train_way) # [4,75,5]->[300,5]
             loss = F.cross_entropy(logits, label)
             acc = utils.compute_acc(logits, label)
 
@@ -175,7 +166,7 @@ def main(config):
                 continue
 
             np.random.seed(0)
-            for data, _ in tqdm(loader, desc=name, leave=False):
+            for data, _ in tqdm(loader, desc=name, leave=False): # data:[320, 3, 80, 80]
                 x_shot, x_query = fs.split_shot_query(
                         data.cuda(), n_way, n_shot, n_query,
                         ep_per_batch=4)

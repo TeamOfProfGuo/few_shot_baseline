@@ -18,10 +18,10 @@ def make(name, **kwargs):
     return model
 
 
-def load(model_sv, name=None):
+def load(model_sv, name=None):  # model_sv: dict with keys ['config', 'model', 'model_args', 'model_sd', 'training']
     if name is None:
         name = 'model'
-    model = make(model_sv[name], **model_sv[name + '_args'])
-    model.load_state_dict(model_sv[name + '_sd'])
+    model = make(model_sv[name], **model_sv[name + '_args'])  # model_name and model_args
+    model.load_state_dict(model_sv[name + '_sd'])   # model state dict
     return model
 
