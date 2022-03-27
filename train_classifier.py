@@ -39,11 +39,10 @@ def main(config):
     ####============================================= Dataset ==================================================####
 
     # train
-    train_dataset = dataset.make(config['train_dataset'], **config['train_dataset_args'])
+    train_dataset = dataset.make(config['train_dataset'], **config['train_dataset_args'])  # 返回x:tensor[3,80,80],y:int
     train_loader = DataLoader(train_dataset, config['batch_size'], shuffle=True, num_workers=8, pin_memory=True)
     utils.log('train dataset: {} (x{}), {}'.format(
-            train_dataset[0][0].shape, len(train_dataset),
-            train_dataset.n_classes))
+            train_dataset[0][0].shape, len(train_dataset), train_dataset.n_classes))
     if config.get('visualize_datasets'):
         utils.visualize_dataset(train_dataset, 'train_dataset', writer)
 
@@ -53,8 +52,7 @@ def main(config):
         val_dataset = dataset.make(config['val_dataset'], **config['val_dataset_args'])
         val_loader = DataLoader(val_dataset, config['batch_size'],num_workers=8, pin_memory=True)
         utils.log('val dataset: {} (x{}), {}'.format(
-                val_dataset[0][0].shape, len(val_dataset),
-                val_dataset.n_classes))
+                val_dataset[0][0].shape, len(val_dataset), val_dataset.n_classes))
         if config.get('visualize_datasets'):
             utils.visualize_dataset(val_dataset, 'val_dataset', writer)
     else:
@@ -69,8 +67,7 @@ def main(config):
 
         fs_dataset = dataset.make(config['fs_dataset'], **config['fs_dataset_args'])
         utils.log('fs dataset: {} (x{}), {}'.format(
-                fs_dataset[0][0].shape, len(fs_dataset),
-                fs_dataset.n_classes))
+                fs_dataset[0][0].shape, len(fs_dataset), fs_dataset.n_classes))
         if config.get('visualize_datasets'):
             utils.visualize_dataset(fs_dataset, 'fs_dataset', writer)
 
@@ -133,7 +130,8 @@ def main(config):
         writer.add_scalar('lr', optimizer.param_groups[0]['lr'], epoch)
 
         for data, label in tqdm(train_loader, desc='train', leave=False):
-            data, label = data.cuda(), label.cuda()
+            if torch.cuda.is_available():
+                data, label = data.cuda(), label.cuda()
             logits = model(data)
             loss = F.cross_entropy(logits, label)
             acc = utils.compute_acc(logits, label)
@@ -151,7 +149,8 @@ def main(config):
         if eval_val:
             model.eval()
             for data, label in tqdm(val_loader, desc='val', leave=False):
-                data, label = data.cuda(), label.cuda()
+                if torch.cuda.is_available():
+                    data, label = data.cuda(), label.cuda()
                 with torch.no_grad():
                     logits = model(data)
                     loss = F.cross_entropy(logits, label)
@@ -164,15 +163,16 @@ def main(config):
             fs_model.eval()
             for i, n_shot in enumerate(n_shots):
                 np.random.seed(0)
-                for data, _ in tqdm(fs_loaders[i], desc='fs-' + str(n_shot), leave=False):
+                for data, _ in tqdm(fs_loaders[i], desc='fs-' + str(n_shot), leave=False): # data:[320,3,80,80],320=4(ep)*5*(1+15)
+                    # x_shot:[4,5(way),1(shot),3,80,90], x_query:[4,75(n_q*way),3,80,80]
                     x_shot, x_query = fs.split_shot_query(data.cuda(), n_way, n_shot, n_query, ep_per_batch=4)
-                    label = fs.make_nk_label(n_way, n_query, ep_per_batch=4).cuda()
+                    label = fs.make_nk_label(n_way, n_query, ep_per_batch=4).cuda() # label for query only (based on order)
                     with torch.no_grad():
-                        logits = fs_model(x_shot, x_query).view(-1, n_way)
+                        logits = fs_model(x_shot, x_query).view(-1, n_way)   # [300, 5]
                         acc = utils.compute_acc(logits, label)
                     aves['fsa-' + str(n_shot)].add(acc)
 
-        ###==== post
+        ###==== post each epoch
         if lr_scheduler is not None:
             lr_scheduler.step()
 

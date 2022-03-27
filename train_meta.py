@@ -14,7 +14,7 @@ import datasets
 import models
 import utils
 import utils.few_shot as fs
-from datasets.samplers import CategoriesSampler
+from dataset.samplers import CategoriesSampler
 
 
 def main(config):
@@ -32,7 +32,7 @@ def main(config):
 
     yaml.dump(config, open(os.path.join(save_path, 'config.yaml'), 'w'))
 
-    #### Dataset ####
+    ####============================================= Dataset =============================================####
 
     n_way, n_shot = config['n_way'], config['n_shot']
     n_query = config['n_query']
@@ -98,9 +98,8 @@ def main(config):
     val_loader = DataLoader(val_dataset, batch_sampler=val_sampler,
                             num_workers=8, pin_memory=True)
 
-    ########
 
-    #### Model and optimizer ####
+    ####=========================================== Model and optimizer ===========================================####
 
     if config.get('load'):
         model_sv = torch.load(config['load'])

@@ -29,16 +29,16 @@ class CategoriesSampler():
         return self.n_batch
     
     def __iter__(self):
-        for i_batch in range(self.n_batch):
+        for i_batch in range(self.n_batch): # 共200个batch
             batch = []
-            for i_ep in range(self.ep_per_batch):
+            for i_ep in range(self.ep_per_batch): # 每个batch:4个episode
                 episode = []
                 classes = np.random.choice(len(self.catlocs), self.n_cls, replace=False)  # 随机选n_way个class
                 for c in classes:
                     l = np.random.choice(self.catlocs[c], self.n_per, replace=False) # query+support img
                     episode.append(torch.from_numpy(l))
-                episode = torch.stack(episode)   # [5, 16] 5=n_way, 16=n_s+n_q
+                episode = torch.stack(episode)   # [5, 16] 5=n_way, 16=n_s+n_q, 每一行对应一个class
                 batch.append(episode)
-            batch = torch.stack(batch) # [200, 5, 16] bs * n_cls * n_per
+            batch = torch.stack(batch) # [4, 5, 16] bs * n_cls * n_per, 每一行（最后dim)对应一个class
             yield batch.view(-1) # [bs*n_cls*n_per]
 
