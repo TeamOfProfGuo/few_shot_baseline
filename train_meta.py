@@ -1,3 +1,4 @@
+# encoding:utf-8
 import argparse
 import os
 import yaml
@@ -20,8 +21,7 @@ from dataset.samplers import CategoriesSampler
 def main(config):
     svname = args.name
     if svname is None:
-        svname = 'meta_{}-{}shot'.format(
-                config['train_dataset'], config['n_shot'])
+        svname = 'meta_{}-{}shot'.format(config['train_dataset'], config['n_shot'])
         svname += '_' + config['model'] + '-' + config['model_args']['encoder']
     if args.tag is not None:
         svname += '_' + args.tag
