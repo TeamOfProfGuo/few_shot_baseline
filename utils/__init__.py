@@ -1,3 +1,4 @@
+# encoding:utf-8
 import os
 import shutil
 import time
@@ -59,8 +60,7 @@ def set_gpu(gpu):
 def ensure_path(path, remove=True):
     basename = os.path.basename(path.rstrip('/'))
     if os.path.exists(path):
-        if remove and (basename.startswith('_')
-                or input('{} exists, remove? ([y]/n): '.format(path)) != 'n'):
+        if remove or (basename.startswith('_') or input('{} exists, remove? ([y]/n): '.format(path)) != 'n'):
             shutil.rmtree(path)
             os.makedirs(path)
     else:
@@ -75,7 +75,7 @@ def time_str(t):
     return '{:.1f}s'.format(t)
 
 
-def compute_logits(feat, proto, metric='dot', temp=1.0):
+def compute_logits(feat, proto, metric='dot', temp=1.0):  # proto:[4,5,512]/[ep,way,d], 已经在shot维度取平均， feat:[4,75,512]/[ep,way*n_q,d]
     assert feat.dim() == proto.dim()
 
     if feat.dim() == 2:
@@ -91,9 +91,8 @@ def compute_logits(feat, proto, metric='dot', temp=1.0):
     elif feat.dim() == 3:
         if metric == 'dot':
             logits = torch.bmm(feat, proto.permute(0, 2, 1))
-        elif metric == 'cos':
-            logits = torch.bmm(F.normalize(feat, dim=-1),
-                               F.normalize(proto, dim=-1).permute(0, 2, 1))
+        elif metric == 'cos':    # [4, 75, 5]
+            logits = torch.bmm(F.normalize(feat, dim=-1), F.normalize(proto, dim=-1).permute(0, 2, 1))
         elif metric == 'sqr':
             logits = -(feat.unsqueeze(2) -
                        proto.unsqueeze(1)).pow(2).sum(dim=-1)
