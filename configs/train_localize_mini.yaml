@@ -1,0 +1,24 @@
+train_dataset: mini-imagenet
+train_dataset_args: {split: train}  # outer look not need for resize augment
+val_dataset: mini-imagenet
+val_dataset_args: {split: val}
+fs_dataset: mini-imagenet
+fs_dataset_args: {split: test}
+eval_fs_epoch: 5
+
+model: classifier
+model_args:
+    encoder: resnet12
+    encoder_args: {}
+    classifier: linear-classifier 
+    classifier_args: {n_classes: 64}
+load_encoder: ./save/classifier_mini-imagenet_resnet12/epoch-last.pth
+
+batch_size: 128
+train_batches: 200
+max_epoch: 100
+optimizer: sgd
+optimizer_args: {lr: 0.1, weight_decay: 5.e-4, milestones: [90]}
+
+save_epoch: 5
+visualize_datasets: true
