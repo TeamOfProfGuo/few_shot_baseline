@@ -2,3 +2,4 @@ train dataset: torch.Size([3, 80, 80]) (x38400), 64
 val dataset: torch.Size([3, 80, 80]) (x18748), 64
 fs dataset: torch.Size([3, 80, 80]) (x12000), 20
 num params: 8.0M
+epoch 1, train 3.6071|0.1228, val 3.3443|0.1664, 1.0m 1.0m/1.7h

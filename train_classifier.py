@@ -40,7 +40,7 @@ def main(config):
 
     # train
     train_dataset = dataset.make(config['train_dataset'], **config['train_dataset_args'])  # 返回x:tensor[3,80,80],y:int
-    train_loader = DataLoader(train_dataset, config['batch_size'], shuffle=True, num_workers=8, pin_memory=True)
+    train_loader = DataLoader(train_dataset, config['batch_size'], shuffle=True, num_workers=4, pin_memory=True)
     utils.log('train dataset: {} (x{}), {}'.format(
             train_dataset[0][0].shape, len(train_dataset), train_dataset.n_classes))
     if config.get('visualize_datasets'):
@@ -50,7 +50,7 @@ def main(config):
     if config.get('val_dataset'):
         eval_val = True
         val_dataset = dataset.make(config['val_dataset'], **config['val_dataset_args'])
-        val_loader = DataLoader(val_dataset, config['batch_size'],num_workers=8, pin_memory=True)
+        val_loader = DataLoader(val_dataset, config['batch_size'], num_workers=4, pin_memory=True)
         utils.log('val dataset: {} (x{}), {}'.format(
                 val_dataset[0][0].shape, len(val_dataset), val_dataset.n_classes))
         if config.get('visualize_datasets'):
@@ -77,7 +77,7 @@ def main(config):
         fs_loaders = []
         for n_shot in n_shots:
             fs_sampler = CategoriesSampler(fs_dataset.label, 200, n_way, n_shot + n_query, ep_per_batch=4)
-            fs_loader = DataLoader(fs_dataset, batch_sampler=fs_sampler, num_workers=8, pin_memory=True)
+            fs_loader = DataLoader(fs_dataset, batch_sampler=fs_sampler, num_workers=4, pin_memory=True)
             fs_loaders.append(fs_loader)
     else:
         eval_fs = False
@@ -116,7 +116,7 @@ def main(config):
             if not config.get('epoch_ex'):
                 break
             train_dataset.transform = train_dataset.default_transform
-            train_loader = DataLoader(train_dataset, config['batch_size'], shuffle=True, num_workers=8, pin_memory=True)
+            train_loader = DataLoader(train_dataset, config['batch_size'], shuffle=True, num_workers=4, pin_memory=True)
 
         timer_epoch.s()
         aves_keys = ['tl', 'ta', 'vl', 'va']  # train_loss, train_acc, val_loss, val_acc
