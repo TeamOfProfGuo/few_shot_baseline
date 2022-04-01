@@ -122,7 +122,7 @@ def main(config):
         t_epoch = utils.time_str(timer_epoch.t())
         utils.log('=========finish epoch {}========== \n '
             'Overall Classifier Acc {:.4f}, Localized Classifier Acc {:.4f} EpochTime {}'.format(
-            epoch, aves['ca'], aves['la'], t_epoch))
+            epoch, aves['ca'].v, aves['la'].v, t_epoch))
 
 
 

@@ -4,3 +4,5 @@
 *.txt
 *.log
 save/
+pic/
+models/__pychache__/
