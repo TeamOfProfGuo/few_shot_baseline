@@ -106,8 +106,8 @@ def main(config):
                                                   ep_per_batch=ep_per_batch)  # x_shot:[4,5,5,3,80,80], x_query:[4,75,3,80,80]
             x_shot, x_query = x_shot.squeeze(0), x_query.squeeze(0)  # [5,5,3,80,80], way,shot x_query[75, 3, 80, 80]
             x_shot = x_shot.view(n_train_way * n_train_shot, *x_shot.shape[-3:])  # [25,3,80,80]
-            y_shot = fs.make_nk_label(n_train_way, n_train_shot, ep_per_batch=ep_per_batch)
-            y_query = fs.make_nk_label(n_train_way, n_query, ep_per_batch=ep_per_batch)  # label for query:[300]
+            y_shot = fs.make_nk_label(n_train_way, n_train_shot, ep_per_batch=ep_per_batch).cuda()
+            y_query = fs.make_nk_label(n_train_way, n_query, ep_per_batch=ep_per_batch).cuda()  # label for query:[300]
 
             pred0, pred = model.outer_loop(x_shot, x_query, y_shot, y_query, meta_args)
             acc0 = (pred0 == y_query).float().sum() / len(y_query)
