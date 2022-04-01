@@ -112,7 +112,7 @@ def main(config):
     timer_epoch = utils.Timer()
 
     for epoch in range(1, max_epoch + 1 + 1):
-        if epoch == max_epoch + 1:
+        if epoch == max_epoch + 1:  # 最后一个epoch没有用RandomResizeCrop Data Augmentation
             if not config.get('epoch_ex'):
                 break
             train_dataset.transform = train_dataset.default_transform

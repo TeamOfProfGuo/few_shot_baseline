@@ -7,7 +7,7 @@ class CategoriesSampler():
 
     def __init__(self, label, n_batch, n_cls, n_per, ep_per_batch=1):
         """
-            生成一个batch generator, (batch中每个iter可以是不同的任务）
+            生成一个batch generator, (batch中每个iter/episode可以是不同的任务）
             batch中每一个iteration, 随机选取n_way个class, 每个cls选取n_per(n_s+n_q)个数据的idx,最终返回整个batch中所有数据的idx
             label: list of labels for all testing data
             n_batch:

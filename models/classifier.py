@@ -8,6 +8,7 @@ from torchvision import transforms
 
 import models
 import utils
+from utils.few_shot import *
 from .models import register
 
 
@@ -41,7 +42,7 @@ class Classifier(nn.Module):
         for epoch in range(1, 100+1):        # finetune 100 个epoch
 
             if aug:
-                crop = transforms.RandomResizedCrop(x_shot.shape[-2:]) 
+                crop = transforms.RandomResizedCrop(x_shot.shape[-2:])
                 x_shot = torch.cat([crop(image).unsqueeze_(0) for image in x_shot], dim=0)
             z_support = self.encoder(x_shot)
 
@@ -64,6 +65,52 @@ class Classifier(nn.Module):
             if epoch%50==1:
                 print('the loss after epoch {} is {}'.format(epoch, epoch_loss/n_iter))
 
+    def outer_loop(self, x_shot, x_query, y_shot, y_query, meta_args):
+
+        # ================== 训练classifier =====================
+        self.reset_cls_weight()
+        self.inner_loop(x_shot, y_shot, init_weight=False)  # 更新的weight在get_CAM中使用
+
+        ### ==================== 计算prototype ==================
+        self.eval()
+
+        sw_feat = []
+        for i in range(len(x_shot)):
+            x = x_shot[i:i + 1]
+            y = y_shot[i:i + 1]
+            cam, feat_conv, cls_id, _ = self.get_CAM(x, y)
+            cam = cam[0]
+            feat_conv = feat_conv.squeeze(dim=0)
+            feat = weighted_feat(feat_conv, cam)  # 当前图片的prototype/weighted feature  #dim [ 512]
+            sw_feat.append(feat)
+
+        sw_feat = torch.cat([feat.unsqueeze(dim=0) for feat in sw_feat], dim=0)  # [25, 512]
+        sw_feat = sw_feat.view(meta_args['n_way'], meta_args['n_shot'], -1)
+        protos = sw_feat.mean(dim=1)  # [5, 512]
+
+        ### =============== 根据prototype对query分类 ==================
+
+        pred0, pred=[], []
+        for i in range(len(x_query)):
+            x = x_query[i: i + 1]  # [1,3,80,80]
+            y = y_query[i]
+            cam, feat_conv, cls_id, logits = self.get_CAM(x)  # No y input, 会输出5个class所对应的cam
+            pred0.append(torch.argmax(logits))
+
+            cls_feat = []
+            for j in range(len(cam)):
+                feat = weighted_feat(feat_conv.squeeze(dim=0), cam[j])
+                cls_feat.append(feat)
+            q_feat = torch.cat([feat.unsqueeze(dim=0) for feat in cls_feat], dim=0)  # [5, 512]对应5个class
+
+            method = 'cos'
+            protos = F.normalize(protos, dim=-1)  # [5, 512]
+            q_feat = F.normalize(q_feat, dim=-1)  # [5, 512]
+            sim = torch.mm(q_feat, protos.t())
+            sim = torch.diagonal(sim, offset=0)
+            pred.append(torch.argmax(sim))
+        return torch.stack(pred0), torch.stack(pred)
+
 
     def get_CAM(self, x, y=None):  #只accept一张图片 x: [1,3,h,w] y:[1]
         if self.backbone == 'resnet12':
@@ -75,7 +122,6 @@ class Classifier(nn.Module):
             feat_blobs.append(output)         # feat_blobs 在cuda上 data.cpu().numpy()
         handle = self.encoder._modules.get(finalconv_name).register_forward_hook(hook_feature)
 
-        self.eval()  # classifier的参数也固定
         with torch.no_grad():
             logits = self.forward(x)
             feat_conv = feat_blobs[0]
