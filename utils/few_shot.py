@@ -15,3 +15,6 @@ def make_nk_label(n, k, ep_per_batch=1):
     label = label.repeat(ep_per_batch)
     return label
 
+
+def get_prototype(feat_lst, cam_lst):
+    pass

@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 import torch
 import torch.nn as nn
+from torchvision import transforms
 
 import models
 import utils
@@ -21,12 +22,12 @@ class Classifier(nn.Module):
         classifier_args['in_dim'] = self.encoder.out_dim
         self.classifier = models.make(classifier, **classifier_args)
 
-    def forward(self, x):
+    def forward(self, x):  # 用于pretraining
         x = self.encoder(x)
         x = self.classifier(x)
         return x
 
-    def inner_loop(self, x_shot, s_label, init_weight=False):
+    def inner_loop(self, x_shot, s_label, aug=False, init_weight=False):
         z_support = self.encoder(x_shot)  # backbone生成的feature, [25,512],[75,512]
 
         # finetune linear classifier
@@ -37,8 +38,15 @@ class Classifier(nn.Module):
 
         batch_size = 4
         support_size = x_shot.shape[0]  # 25
-        for epoch in range(100):        # finetune 100 个epoch
+        for epoch in range(1, 100+1):        # finetune 100 个epoch
+
+            if aug:
+                crop = transforms.RandomResizedCrop(x_shot.shape[-2:]) 
+                x_shot = torch.cat([crop(image).unsqueeze_(0) for image in x_shot], dim=0)
+            z_support = self.encoder(x_shot)
+
             rand_id = np.random.permutation(support_size)
+            epoch_loss, n_iter = 0.0, 0
             for i in range(0, support_size, batch_size):
                 inner_optimizer.zero_grad()
                 # 选择当前batch
@@ -51,6 +59,12 @@ class Classifier(nn.Module):
                 loss.backward()
                 inner_optimizer.step()
 
+                epoch_loss += loss
+                n_iter += 1
+            if epoch%50==1:
+                print('the loss after epoch {} is {}'.format(epoch, epoch_loss/n_iter))
+
+
     def get_CAM(self, x, y=None):  #只accept一张图片 x: [1,3,h,w] y:[1]
         if self.backbone == 'resnet12':
             finalconv_name = 'layer4'
@@ -58,8 +72,7 @@ class Classifier(nn.Module):
         #hook the feature extractor
         feat_blobs = []
         def hook_feature(module, input, output):
-            feat_blobs.append(output.data.cpu().numpy())
-            print(output.shape)
+            feat_blobs.append(output)         # feat_blobs 在cuda上 data.cpu().numpy()
         handle = self.encoder._modules.get(finalconv_name).register_forward_hook(hook_feature)
 
         self.eval()  # classifier的参数也固定
@@ -68,21 +81,30 @@ class Classifier(nn.Module):
             feat_conv = feat_blobs[0]
             handle.remove()
 
-        # generate the class activation maps upsample to 80x80
-        weight_softmax = self.classifier.state_dict()['linear.weight'].data.numpy() # [5, 512] 共512个channel
-        bias_softmax = self.classifier.state_dict()['linear.bias'].data.numpy()
-        class_idx = np.array(y) if y is not None else np.arange(self.n_classes)
+        # generate the class activation maps
+        if y is not None:
+            class_idx = y
+        else:
+            class_idx = torch.arange(self.n_classes)
+            if torch.cuda.is_available():
+                class_idx = class_idx.cuda()
+        weight_softmax = self.classifier.state_dict()['linear.weight']  # [5, 512] 共512个channel
+        bias_softmax = self.classifier.state_dict()['linear.bias']  # [5]对应5个class 在cpu上/如果从gpu读取的话在gpu上
+
         bz, nc, h, w = feat_conv.shape   # batch_size=1 [1, 512, 5, 5]
-        output_cam = []
+        cam_lst = []
         for idx in class_idx:
-            cam = weight_softmax[idx].dot(feat_conv.reshape((nc, h * w)))  # array[hw]
+            cam = torch.matmul(weight_softmax[idx], feat_conv.reshape((nc, h * w)) ) # array[hw]
             cam = cam.reshape(h, w) + bias_softmax[idx]/(h*w)
-            output_cam.append(cam)
-            # cam = cam - np.min(cam)
-            # cam_img = cam / np.max(cam)
-            # cam_img = np.uint8(255 * cam_img)
-            # output_cam.append(cv2.resize(cam_img, size_upsample))
-        return output_cam, class_idx
+            cam_lst.append(cam)
+        return cam_lst, feat_conv, class_idx, logits
+
+    def reset_cls_weight(self):
+        for name, module in self.classifier.named_children():
+            if isinstance(module, nn.Linear):
+                print('resetting', name)
+                module.reset_parameters()
+
 
 
 @register('linear-classifier')

@@ -21,7 +21,6 @@ import utils.few_shot as fs
 from dataset.samplers import CategoriesSampler
 
 
-
 parser = argparse.ArgumentParser()
 parser.add_argument('--config', default='configs/train_localize_mini.yaml')
 parser.add_argument('--name', default=None)
@@ -45,9 +44,9 @@ if svname is None:
 if args.tag is not None:
     svname += '_' + args.tag
 save_path = os.path.join('./save', svname)
-utils.ensure_path(save_path)
-utils.set_log_path(save_path)
-writer = SummaryWriter(os.path.join(save_path, 'tensorboard'))
+#utils.ensure_path(save_path)
+#utils.set_log_path(save_path)
+#writer = SummaryWriter(os.path.join(save_path, 'tensorboard'))
 
 # yaml.dump(config, open(os.path.join(save_path, 'config.yaml'), 'w'))
 
@@ -117,46 +116,140 @@ for epoch in range(1, max_epoch + 1 + 1):
     aves = {k: utils.Averager() for k in aves_keys}
 
     ###==== train
-    model.train()
-    writer.add_scalar('lr', optimizer.param_groups[0]['lr'], epoch)
 
-    for i, (data, label) in enumerate(train_loader):  # data[400,3,80,80],_[400]
-        if i>=2:
-            break
-        if torch.cuda.is_available():
-            data, label = data.cuda(), label.cuda()
-        x_shot, x_query = fs.split_shot_query(
-            data, n_train_way, n_train_shot, n_query,
-            ep_per_batch=ep_per_batch)  # x_shot:[4,5,5,3,80,80], x_query:[4,75,3,80,80]
+    #writer.add_scalar('lr', optimizer.param_groups[0]['lr'], epoch)
+model.train()
+for i, (data, label) in enumerate(train_loader):  # data[400,3,80,80],_[400]
+    if i>=2:
+        break
+if torch.cuda.is_available():
+    data, label = data.cuda(), label.cuda()
+x_shot, x_query = fs.split_shot_query(
+    data, n_train_way, n_train_shot, n_query,
+    ep_per_batch=ep_per_batch)  # x_shot:[4,5,5,3,80,80], x_query:[4,75,3,80,80]
 
-def weight_reset(m):
-    if isinstance(m, nn.Linear):
-        m.reset_parameters()
-model.classifier.apply(weight_reset)
 
 x_shot, x_query = x_shot.squeeze(0), x_query.squeeze(0) # [5,5,3,80,80], way,shot x_query[75, 3, 80, 80]
 x_shot = x_shot.view(n_train_way*n_train_shot, *x_shot.shape[-3:]) # [25,3,80,80]
-s_label = fs.make_nk_label(n_train_way, n_train_shot, ep_per_batch=ep_per_batch)
-q_label = fs.make_nk_label(n_train_way, n_query, ep_per_batch=ep_per_batch)  # label for query:[300]
+y_shot = fs.make_nk_label(n_train_way, n_train_shot, ep_per_batch=ep_per_batch)
+y_query = fs.make_nk_label(n_train_way, n_query, ep_per_batch=ep_per_batch)  # label for query:[300]
 
+model.reset_cls_weight()
 init_weight, init_bias = model.state_dict()['classifier.linear.weight'], model.state_dict()['classifier.linear.bias']
+#print(init_weight)
 #用support image训练classifier weight
-model.inner_loop(x_shot, s_label, init_weight=False)
+model.inner_loop(x_shot, y_shot, init_weight=False)
 new_weight, new_bias = model.state_dict()['classifier.linear.weight'], model.state_dict()['classifier.linear.bias']
+#print(new_weight)
 
-i = 2
-x = x_shot[i:i+1]
-y = s_label[i:i+1]
-cam, cls_id = model.get_CAM(x, )
 
-def normalize_cam(cam, size_upsample):
+### ================================================== 计算prototype ==================================================
+
+def weighted_feat(feat, cam, T=0.5, method='percentile'):  # feat[512,5,5] cam [5, 5]
+    # normalize cam between [0, 1]
+    cam = (cam - torch.min(cam))/(torch.max(cam)-torch.min(cam))
+    weight = F.softmax(torch.flatten(cam)/T, dim=0) # .view(cam.shape)  # [hw]
+    ch = feat.shape[0]
+    out = torch.matmul(feat.view(ch, -1), weight)
+    return out
+
+model.eval()
+s_cam = []
+s_feat = []
+sw_feat = []
+
+for i in range(len(x_shot)):
+    x = x_shot[i:i+1]
+    y = y_shot[i:i+1]
+    cam, feat_conv, cls_id, _ = model.get_CAM(x, y)
+    cam = cam[0]
+    feat_conv = feat_conv.squeeze(dim=0)
+    feat = weighted_feat(feat_conv, cam)  # 当前图片的prototype/weighted feature  #dim [ 512]
+    sw_feat.append(feat)
+    s_cam.append(cam)
+    s_feat.append(feat_conv)
+
+sw_feat = torch.cat([feat.unsqueeze(dim=0) for feat in sw_feat], dim=0)   #[25, 512]
+sw_feat = sw_feat.view(n_train_way, n_train_shot, -1)
+protos = sw_feat.mean(dim=1)  # [5, 512]
+
+### ================================================== 根据prototype分类 ================================================
+
+acc0, acc=0, 0
+for i in range(len(x_query)):
+    x = x_query[i: i+1]  # [1,3,80,80]
+    y = y_query[i]
+    cam, feat_conv, cls_id, logits = model.get_CAM(x)  # No y input, 会输出5个class所对应的cam
+    pred0 = torch.argmax(logits)
+    acc0 += (pred0 == y).data.cpu().numpy()
+
+    cls_feat = []
+    for j in range(len(cam)):
+        feat = weighted_feat(feat_conv.squeeze(dim=0), cam[j])
+        cls_feat.append(feat)
+    q_feat = torch.cat([feat.unsqueeze(dim=0) for feat in cls_feat], dim=0)   # [5, 512]对应5个class
+
+    method = 'cos'
+    protos = F.normalize(protos, dim=-1)  # [5, 512]
+    q_feat = F.normalize(q_feat, dim=-1)  # [5, 512]
+    sim =  torch.mm(q_feat, protos.t())
+    sim = torch.diagonal(sim, offset=0)
+    pred = torch.argmax(sim)
+    acc += (pred == y).data.cpu().numpy()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+T = 2
+cam = s_cam[0]
+cam1 = (cam - torch.mean(cam))/torch.std(cam)
+y = cam1.unsqueeze(dim=0)/T
+out1 = F.softmax(y.view(1, -1), dim=1).view(y.shape[1], -1).numpy()
+
+T=0.5
+cam2 = (cam - torch.min(cam))/(torch.max(cam)-torch.min(cam))
+y = cam2.unsqueeze(dim=0)/T
+out2 = F.softmax(y.view(1, -1), dim=1).view(y.shape[1], -1).numpy()
+
+T=0.5
+cam2 = (cam - torch.min(cam))/(torch.max(cam)-torch.min(cam))
+y = cam2/T
+out2 = F.softmax(torch.flatten(y), dim=0).view(cam2.shape).numpy()
+
+
+z = []
+for i_cam in cam:
+    z.append(np.average(i_cam))
+print(i, ':', z)
+print(np.average((np.array(z))))
+
+
+def normalize_cam1(cam):
     cam = cam - np.min(cam)
     cam_img = cam / np.max(cam)
-    cam_img = np.uint8(255 * cam_img)
-    cam_img = cv2.resize(cam_img, size_upsample)
     return cam_img
+cam_norm = normalize_cam1(cam[0])
 
-cam_img = normalize_cam(cam[1], (80, 80))
+T = 0.5
+y = torch.tensor(cam_norm).unsqueeze(dim=0)/T
+out = F.softmax(y.view(1, -1), dim=1).view(y.shape[1], -1).numpy()
+
+
+
+cam_img = normalize_cam(out, (80, 80))
 
 invTrans = transforms.Compose([transforms.Normalize(mean=[0., 0., 0.], std=[1/0.229, 1/0.224, 1/0.225]),
                                transforms.Normalize(mean=[-0.485, -0.456, -0.406], std=[1., 1., 1.]),
