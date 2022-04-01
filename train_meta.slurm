@@ -8,7 +8,7 @@
 
 # training config
 dataset=$1
-exp_id=train_classifier_${dataset}
+exp_id=train_meta_${dataset}
 config_path=configs/${exp_id}.yaml
 
 # Singularity path
@@ -21,5 +21,5 @@ singularity exec --nv \
 /bin/bash -c "
 source /ext3/env.sh
 cd /scratch/$USER/few_shot_baseline
-python train_classifier.py --config ${config_path}
+python train_meta.py --config ${config_path}
 "

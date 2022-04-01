@@ -3,12 +3,13 @@
 #SBATCH --job-name=fs-cls
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32GB
-#SBATCH --time=4:00:00
+#SBATCH --time=1:00:00
 #SBATCH --gres=gpu:1
 
 # training config
-dataset=$1
-exp_id=train_classifier_${dataset}
+shot=$1
+dataset=$2
+exp_id=test_few_shot_${dataset}
 config_path=configs/${exp_id}.yaml
 
 # Singularity path
@@ -21,5 +22,5 @@ singularity exec --nv \
 /bin/bash -c "
 source /ext3/env.sh
 cd /scratch/$USER/few_shot_baseline
-python train_classifier.py --config ${config_path}
+python test_few_shot.py --shot ${shot} --config ${config_path}
 "
