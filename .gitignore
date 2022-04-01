@@ -1,0 +1,6 @@
+*.out
+*.pth
+*.pyc
+*.txt
+*.log
+save/
