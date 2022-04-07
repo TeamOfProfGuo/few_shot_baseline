@@ -12,8 +12,8 @@ from utils.few_shot import *
 from .models import register
 
 
-@register('classifier')
-class Classifier(nn.Module):
+@register('adapt')
+class AdaptClassifier(nn.Module):
 
     def __init__(self, encoder, encoder_args, classifier, classifier_args,
                  meta_train, meta_train_args):
@@ -25,6 +25,7 @@ class Classifier(nn.Module):
         self.classifier = models.make(classifier, **classifier_args)
 
         if meta_train:
+            self.mid = 23
             self.norm = 'norm'
             if meta_train_args['learn_temp']:
                 self.temp = nn.Parameter(torch.tensor(meta_train_args['temp']))
@@ -41,6 +42,15 @@ class Classifier(nn.Module):
             else:
                 self.tp = 1.0
 
+            if self.mid == 23:
+                fea_dim = 128+256
+            else:
+                fea_dim = 256+512
+            reduce_dim=256
+            self.down_mid =  nn.Conv2d(fea_dim, reduce_dim, kernel_size=1, padding=0, bias=False)
+                #nn.ReLU(inplace=True),
+                # nn.Dropout2d(p=0.5)
+
     def forward(self, x):  # 用于pretraining
         x = self.encoder(x)
         x = self.classifier(x)
@@ -50,14 +60,13 @@ class Classifier(nn.Module):
 
         # finetune linear classifier
         inner_optimizer = torch.optim.SGD(self.classifier.parameters(), lr=0.01, momentum=0.9, dampening=0.9,
-                                        weight_decay=0.001)
+                                          weight_decay=0.001)
         loss_function = nn.CrossEntropyLoss()
         loss_function = loss_function.cuda() if torch.cuda.is_available() else loss_function
 
         batch_size = 4
         support_size = x_shot.shape[0]  # 25
         for epoch in range(1, 100+1):        # finetune 100 个epoch
-
             if aug:
                 crop = transforms.RandomResizedCrop(x_shot.shape[-2:])
                 x_shot = torch.cat([crop(image).unsqueeze_(0) for image in x_shot], dim=0)
@@ -66,7 +75,6 @@ class Classifier(nn.Module):
             rand_id = np.random.permutation(support_size)
             epoch_loss, n_iter = 0.0, 0
             for i in range(0, support_size, batch_size):
-                inner_optimizer.zero_grad()
                 # 选择当前batch
                 selected_id = torch.from_numpy(rand_id[i: min(i + batch_size, support_size)])
                 selected_id = selected_id.cuda() if torch.cuda.is_available() else selected_id
@@ -74,6 +82,7 @@ class Classifier(nn.Module):
                 y_batch = s_label[selected_id]
                 scores = self.classifier(z_batch)
                 loss = loss_function(scores, y_batch)
+                inner_optimizer.zero_grad()
                 loss.backward()
                 inner_optimizer.step()
 
@@ -96,9 +105,9 @@ class Classifier(nn.Module):
         for i in range(len(x_shot)):
             x = x_shot[i:i + 1]
             y = y_shot[i:i + 1]
-            cam, feat_conv, cls_id, _ = self.get_CAM(x, y)
+            cam, cls_id, _, mid_feat = self.get_CAM(x, y)
             cam = cam[0]
-            feat_conv = feat_conv.squeeze(dim=0)
+            feat_conv = self.down_mid(mid_feat).squeeze(0)
             feat = weighted_feat(feat_conv, cam, norm=self.norm,  T=self.temp, thresh=self.thresh)  # 当前图片的prototype/weighted feature  #dim [512]
             sw_feat.append(feat)
 
@@ -110,12 +119,13 @@ class Classifier(nn.Module):
         q_logits0, q_logits=[], []
         for i in range(len(x_query)):
             x = x_query[i: i + 1]  # [1,3,80,80]
-            cam, feat_conv, cls_id, logits0 = self.get_CAM(x)  # No y input, 会输出5个class所对应的cam
+            cam, cls_id, logits0, mid_feat = self.get_CAM(x)  # No y input, 会输出5个class所对应的cam
             q_logits0.append(logits0.squeeze(0))
 
             cls_feat = []
             for j in range(len(cam)):
-                feat = weighted_feat(feat_conv.squeeze(dim=0), cam[j], norm=self.norm, T=self.temp, thresh=self.thresh)
+                feat_conv = self.down_mid(mid_feat).squeeze(0)
+                feat = weighted_feat(feat_conv, cam[j], norm=self.norm, T=self.temp, thresh=self.thresh)
                 cls_feat.append(feat)
             q_feat = torch.cat([feat.unsqueeze(dim=0) for feat in cls_feat], dim=0)  # [5, 512]对应5个class
             logits = utils.compute_logits_localize(q_feat, protos, metric='cos', temp=self.tp) # [5]
@@ -127,18 +137,22 @@ class Classifier(nn.Module):
 
     def get_CAM(self, x, y=None):  # 只accept一张图片 x: [1,3,h,w] y:[1]
         if self.backbone == 'resnet12':
-            finalconv_name = 'layer4'
+            layer_lst =['layer2', 'layer3', 'layer4']
 
-        # hook the feature extractor
+        # forward pass中保留中间层的输出
         feat_blobs = []
         def hook_feature(module, input, output):
-            feat_blobs.append(output)         # feat_blobs 在cuda上 data.cpu().numpy()
-        handle = self.encoder._modules.get(finalconv_name).register_forward_hook(hook_feature)
+            feat_blobs.append(output)
+
+        handles = {}
+        for name in layer_lst:
+            handles[name] = self.encoder._modules.get(name).register_forward_hook(hook_feature)
 
         with torch.no_grad():
             logits = self.forward(x)
-            feat_conv = feat_blobs[0]
-            handle.remove()
+            feat2, feat3, feat4 = feat_blobs  # [1,128,20,20] #[1,256,10,10] #[1,512,5,5]
+            for k, v in handles.items():
+                handles[k].remove()
 
         # generate the class activation maps
         if y is not None:
@@ -150,13 +164,16 @@ class Classifier(nn.Module):
         weight_softmax = self.classifier.state_dict()['linear.weight']  # [5, 512] 共512个channel
         bias_softmax = self.classifier.state_dict()['linear.bias']  # [5]对应5个class 在cpu上/如果从gpu读取的话在gpu上
 
-        bz, nc, h, w = feat_conv.shape   # batch_size=1 [1, 512, 5, 5]
+        bz, nc, h, w = feat4.shape   # batch_size=1 [1, 512, 5, 5]
         cam_lst = []
         for idx in class_idx:
-            cam = torch.matmul(weight_softmax[idx], feat_conv.reshape((nc, h * w)) ) # array[hw]
+            cam = torch.matmul(weight_softmax[idx], feat4.reshape((nc, h * w)) ) # array[hw]
             cam = cam.reshape(h, w) + bias_softmax[idx]/(h*w)
             cam_lst.append(cam)
-        return cam_lst, feat_conv, class_idx, logits
+
+        if self.mid ==23:
+            mid_feat = torch.cat( (F.interpolate(feat2,size=feat3.shape[-2:]), feat3), dim=1 )  #[1, ch, h, w]
+        return cam_lst, class_idx, logits, mid_feat
 
     def reset_cls_weight(self):
         for name, module in self.classifier.named_children():

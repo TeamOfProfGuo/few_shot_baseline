@@ -24,7 +24,7 @@ from dataset.samplers import CategoriesSampler
 def main(config):
     svname = args.name
     if svname is None:
-        svname = 'localize_{}'.format(config['train_dataset'])
+        svname = 'adapt_{}'.format(config['train_dataset'])
         svname += '_' + config['model_args']['encoder']
         clsfr = config['model_args']['classifier']
         if clsfr != 'linear-classifier':
@@ -113,7 +113,7 @@ def main(config):
 
     param_list = []  # 在meta train过程中只更新 meta参数（thresh, temp, tp)
     for name, param in model.named_parameters():
-        if name in ['thresh', 'tp', 'temp']:
+        if name in ['thresh', 'tp', 'temp', 'down_mid.weight']:
             param_list.append(param)
     optimizer, lr_scheduler = utils.make_optimizer(param_list, config['optimizer'], **config['optimizer_args'])
 
@@ -199,7 +199,7 @@ def main(config):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', default='configs/train_localize_mini.yaml')
+    parser.add_argument('--config', default='configs/train_adapt_mini.yaml')
     parser.add_argument('--name', default=None)
     parser.add_argument('--tag', default=None)
     parser.add_argument('--gpu', default='0')

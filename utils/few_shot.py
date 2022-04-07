@@ -19,6 +19,9 @@ def make_nk_label(n, k, ep_per_batch=1):
 
 def weighted_feat(feat, cam, T=0.5, norm='scale', thresh=None, method='percentile'):  # feat[512,5,5] cam [5, 5]
     # normalize cam between [0, 1]
+    if not cam.shape[-2:] == feat.shape[-2:]:
+        cam = F.interpolate(cam.reshape(1, 1, *cam.shape), size=feat.shape[-2:], mode='bilinear', align_corners=True)
+        cam = cam.squeeze()
     if norm == 'norm':
         cam = (cam - torch.mean(cam)) / torch.std(cam)
     else:

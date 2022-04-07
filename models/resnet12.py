@@ -88,10 +88,10 @@ class ResNet12(nn.Module):
         return block
 
     def forward(self, x):
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
+        x = self.layer1(x)  # 64
+        x = self.layer2(x)  # 128
+        x = self.layer3(x)  # 256
+        x = self.layer4(x)  # 512
         x = x.view(x.shape[0], x.shape[1], -1).mean(dim=2) # average pool [B, ch, hw]
         return x
 
