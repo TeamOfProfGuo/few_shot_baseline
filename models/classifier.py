@@ -14,14 +14,35 @@ from .models import register
 
 @register('classifier')
 class Classifier(nn.Module):
-    
-    def __init__(self, encoder, encoder_args, classifier, classifier_args):
+
+    def __init__(self, encoder, encoder_args, classifier, classifier_args,
+                 meta_train, meta_train_args):
         super().__init__()
         self.backbone = encoder # resnet12
         self.n_classes = classifier_args['n_classes']
         self.encoder = models.make(encoder, **encoder_args)
         classifier_args['in_dim'] = self.encoder.out_dim
         self.classifier = models.make(classifier, **classifier_args)
+
+        if meta_train:
+            self.norm = 'norm'
+            if meta_train_args['learn_temp']:
+                self.temp = nn.Parameter(torch.tensor(meta_train_args['temp']))
+            else:
+                self.temp = meta_train_args['temp']
+
+            if meta_train_args['learn_thresh']:
+                self.thresh = nn.Parameter(torch.tensor(meta_train_args['thresh']))
+            else:
+                self.thresh = meta_train_args['thresh']
+
+            if meta_train_args['learn_tp']:
+                self.tp = nn.Parameter(torch.tensor(1.0))
+            else:
+                self.tp = 1.0
+
+
+
 
     def forward(self, x):  # 用于pretraining
         x = self.encoder(x)
@@ -68,55 +89,51 @@ class Classifier(nn.Module):
     def outer_loop(self, x_shot, x_query, y_shot, y_query, meta_args):
 
         # ================== 训练classifier =====================
+        self.train()
         self.reset_cls_weight()
         self.inner_loop(x_shot, y_shot, init_weight=False)  # 更新的weight在get_CAM中使用
 
-        ### ==================== 计算prototype ==================
+        # ==================== 计算prototype ==================
         self.eval()
 
-        sw_feat = []
+        sw_feat = []   # support weighted feature
         for i in range(len(x_shot)):
             x = x_shot[i:i + 1]
             y = y_shot[i:i + 1]
             cam, feat_conv, cls_id, _ = self.get_CAM(x, y)
             cam = cam[0]
             feat_conv = feat_conv.squeeze(dim=0)
-            feat = weighted_feat(feat_conv, cam)  # 当前图片的prototype/weighted feature  #dim [ 512]
+            feat = weighted_feat(feat_conv, cam, norm=self.norm,  T=self.temp, thresh=self.thresh)  # 当前图片的prototype/weighted feature  #dim [512]
             sw_feat.append(feat)
 
         sw_feat = torch.cat([feat.unsqueeze(dim=0) for feat in sw_feat], dim=0)  # [25, 512]
         sw_feat = sw_feat.view(meta_args['n_way'], meta_args['n_shot'], -1)
         protos = sw_feat.mean(dim=1)  # [5, 512]
 
-        ### =============== 根据prototype对query分类 ==================
-
-        pred0, pred=[], []
+        # =============== 根据prototype对query分类 ==================
+        q_logits0, q_logits=[], []
         for i in range(len(x_query)):
             x = x_query[i: i + 1]  # [1,3,80,80]
-            y = y_query[i]
-            cam, feat_conv, cls_id, logits = self.get_CAM(x)  # No y input, 会输出5个class所对应的cam
-            pred0.append(torch.argmax(logits))
+            cam, feat_conv, cls_id, logits0 = self.get_CAM(x)  # No y input, 会输出5个class所对应的cam
+            q_logits0.append(logits0.squeeze(0))
 
             cls_feat = []
             for j in range(len(cam)):
-                feat = weighted_feat(feat_conv.squeeze(dim=0), cam[j])
+                feat = weighted_feat(feat_conv.squeeze(dim=0), cam[j], norm=self.norm, T=self.temp, thresh=self.thresh)
                 cls_feat.append(feat)
             q_feat = torch.cat([feat.unsqueeze(dim=0) for feat in cls_feat], dim=0)  # [5, 512]对应5个class
+            logits = utils.compute_logits_localize(q_feat, protos, metric='cos', temp=self.tp) # [5]
+            q_logits.append(logits)
 
-            method = 'cos'
-            protos = F.normalize(protos, dim=-1)  # [5, 512]
-            q_feat = F.normalize(q_feat, dim=-1)  # [5, 512]
-            sim = torch.mm(q_feat, protos.t())
-            sim = torch.diagonal(sim, offset=0)
-            pred.append(torch.argmax(sim))
-        return torch.stack(pred0), torch.stack(pred)
+        logits0 = torch.cat([l.unsqueeze(0) for l in q_logits0], dim=0)  # [75, 5]
+        logits  = torch.cat([l.unsqueeze(0) for l in q_logits ], dim=0)  # [75, 5]
+        return logits0, logits
 
-
-    def get_CAM(self, x, y=None):  #只accept一张图片 x: [1,3,h,w] y:[1]
+    def get_CAM(self, x, y=None):  # 只accept一张图片 x: [1,3,h,w] y:[1]
         if self.backbone == 'resnet12':
             finalconv_name = 'layer4'
 
-        #hook the feature extractor
+        # hook the feature extractor
         feat_blobs = []
         def hook_feature(module, input, output):
             feat_blobs.append(output)         # feat_blobs 在cuda上 data.cpu().numpy()

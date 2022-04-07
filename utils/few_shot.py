@@ -17,9 +17,15 @@ def make_nk_label(n, k, ep_per_batch=1):
     return label
 
 
-def weighted_feat(feat, cam, T=0.5, method='percentile'):  # feat[512,5,5] cam [5, 5]
+def weighted_feat(feat, cam, T=0.5, norm='scale', thresh=None, method='percentile'):  # feat[512,5,5] cam [5, 5]
     # normalize cam between [0, 1]
-    cam = (cam - torch.min(cam)) / (torch.max(cam) - torch.min(cam))
+    if norm == 'norm':
+        cam = (cam - torch.mean(cam)) / torch.std(cam)
+    else:
+        cam = (cam - torch.min(cam)) / (torch.max(cam) - torch.min(cam))
+    if thresh is not None:
+        cam = torch.relu(cam-thresh)
+
     weight = F.softmax(torch.flatten(cam) / T, dim=0)  # .view(cam.shape)  # [hw]
     ch = feat.shape[0]
     out = torch.matmul(feat.view(ch, -1), weight)

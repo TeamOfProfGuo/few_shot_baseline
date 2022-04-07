@@ -100,6 +100,16 @@ def compute_logits(feat, proto, metric='dot', temp=1.0):  # proto:[4,5,512]/[ep,
     return logits * temp
 
 
+def compute_logits_localize(q_feat, protos, metric='cos', temp=1.0):
+    # q_feat对应一个query img的weighted feat wrt. CAM for different class
+    if metric == 'cos':
+        protos = F.normalize(protos, dim=-1)  # [5, 512]
+        q_feat = F.normalize(q_feat, dim=-1)  # [5, 512]
+        sim = torch.sum(q_feat * protos, dim=-1)  # [5]
+    return sim*temp
+
+
+
 def compute_acc(logits, label, reduction='mean'):
     ret = (torch.argmax(logits, dim=1) == label).float()
     if reduction == 'none':
