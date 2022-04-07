@@ -184,11 +184,10 @@ def main(config):
                 y_shot = fs.make_nk_label(n_way, n_shot, ep_per_batch=ep_per_batch).cuda()
                 y_query = fs.make_nk_label(n_way, n_query, ep_per_batch=ep_per_batch).cuda()  # label for query:[300]
 
-                with torch.no_grad():
-                    logits0, logits = model.outer_loop(x_shot, x_query, y_shot, y_query, meta_args)  # [75, 5]
-                    loss = F.cross_entropy(logits, y_query)
-                    acc0 = utils.compute_acc(logits0, y_query)
-                    acc = utils.compute_acc(logits, y_query)
+                logits0, logits = model.outer_loop(x_shot, x_query, y_shot, y_query, meta_args)  # [75, 5]
+                loss = F.cross_entropy(logits, y_query)
+                acc0 = utils.compute_acc(logits0, y_query)
+                acc = utils.compute_acc(logits, y_query)
 
                 aves[name_l].add(loss.item())
                 aves[name_a].add(acc)
