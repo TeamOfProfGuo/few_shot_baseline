@@ -102,9 +102,6 @@ class AdaptClassifier(nn.Module):
         self.eval()
 
         sw_feat = []   # support weighted feature
-        cam_lst, cls_id, logits, mid_feat = self.get_CAM(x_shot, y_shot)
-        feat_conv = self.down_mid(mid_feat)           # [25,256,10,10]
-        cam = torch.cat( [l for l in cam_lst], dim=0) # [25, 5, 5]
         for i in range(len(x_shot)):
             x = x_shot[i:i + 1]
             y = y_shot[i:i + 1]
@@ -138,7 +135,7 @@ class AdaptClassifier(nn.Module):
         logits  = torch.cat([l.unsqueeze(0) for l in q_logits ], dim=0)  # [75, 5]
         return logits0, logits
 
-    def get_CAM(self, x, y=None):  # 只accept一张图片 x: [B,3,h,w] y:[1]
+    def get_CAM(self, x, y=None):  # 只accept一张图片 x: [1,3,h,w] y:[1]
         if self.backbone == 'resnet12':
             layer_lst =['layer2', 'layer3', 'layer4']
 
@@ -153,15 +150,15 @@ class AdaptClassifier(nn.Module):
 
         with torch.no_grad():
             logits = self.forward(x)
-            feat2, feat3, feat4 = feat_blobs  # [100,128,20,20] #[100,256,10,10] #[100,512,5,5]
+            feat2, feat3, feat4 = feat_blobs  # [1,128,20,20] #[1,256,10,10] #[1,512,5,5]
             for k, v in handles.items():
                 handles[k].remove()
 
         # generate the class activation maps
         if y is not None:
-            class_idx = y.unsqueeze(1)  # [100,1]
+            class_idx = y
         else:
-            class_idx = torch.arange(self.n_classes).repeat(len(x), 1)  # [100,5]
+            class_idx = torch.arange(self.n_classes)
             if torch.cuda.is_available():
                 class_idx = class_idx.cuda()
         weight_softmax = self.classifier.state_dict()['linear.weight']  # [5, 512] 共512个channel
@@ -169,17 +166,14 @@ class AdaptClassifier(nn.Module):
 
         bz, nc, h, w = feat4.shape   # batch_size=1 [1, 512, 5, 5]
         cam_lst = []
-        for i in range(len(x)):
-            weight_i = torch.cat( [weight_softmax[idx].unsqueeze(0) for idx in class_idx[i]], dim=0 )  #[len(idx), 512]
-            bias_i = bias_softmax[class_idx[i]].unsqueeze(1)  # [len(idx), 1]
-            cam_i = torch.matmul(weight_i, feat4[i].reshape(nc, h*w))   # [len(idx), 25]
-            cam_i = cam_i + bias_i       # 单个img针对所有class的CAM, 其长度取决于：选取了多少个y_idx
-            cam_lst.append(cam_i.view(cam_i.shape[0], h, w))        # list, 每个element[len(idx), h, w]
+        for idx in class_idx:
+            cam = torch.matmul(weight_softmax[idx], feat4.reshape((nc, h * w)) ) # array[hw]
+            cam = cam.reshape(h, w) + bias_softmax[idx]/(h*w)
+            cam_lst.append(cam)
 
         if self.mid ==23:
             mid_feat = torch.cat( (F.interpolate(feat2,size=feat3.shape[-2:]), feat3), dim=1 )  #[1, ch, h, w]
         return cam_lst, class_idx, logits, mid_feat
-        # cam_lst:[100]每项[len(idx],5, 5],class_idx:[100,5way]或者[100,1], logits:[100,5way], mid_feat[100, 384, 10, 10]
 
     def reset_cls_weight(self):
         for name, module in self.classifier.named_children():
