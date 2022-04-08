@@ -35,6 +35,8 @@ def main(config):
     utils.ensure_path(save_path)
     utils.set_log_path(save_path)
 
+    utils.log('svname {}, save_path {}'.format(svname, save_path))
+
     writer = SummaryWriter(os.path.join(save_path, 'tensorboard'))
     yaml.dump(config, open(os.path.join(save_path, 'config.yaml'), 'w'))
 
@@ -153,8 +155,8 @@ def main(config):
             loss.backward()
             optimizer.step()
 
-            aves['ta'].add(acc0)
-            aves['ta0'].add(acc)
+            aves['ta'].add(acc)
+            aves['ta0'].add(acc0)
 
             t_used = utils.time_str(timer_used.t())
             utils.log('epoch {}, episode {}, Classifier Acc {:.4f}, Localized Classifier Acc {:.4f} '

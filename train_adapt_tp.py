@@ -40,8 +40,8 @@ if svname is None:
         svname += '-' + clsfr
 if args.tag is not None:
     svname += '_' + args.tag
-# save_path = os.path.join('./save', svname)
-#utils.ensure_path(save_path)
+save_path = os.path.join('./save', svname)
+utils.ensure_path(save_path)
 #utils.set_log_path(save_path)
 #writer = SummaryWriter(os.path.join(save_path, 'tensorboard'))
 # yaml.dump(config, open(os.path.join(save_path, 'config.yaml'), 'w'))
