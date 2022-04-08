@@ -153,13 +153,14 @@ def main(config):
             loss.backward()
             optimizer.step()
 
-            aves['ta'].add(acc0)
-            aves['ta0'].add(acc)
+            aves['ta'].add(acc)
+            aves['ta0'].add(acc0)
 
-            t_used = utils.time_str(timer_used.t())
-            utils.log('epoch {}, episode {}, Classifier Acc {:.4f}, Localized Classifier Acc {:.4f} '
-                      'AllTime {} thresh {:.4f} tp {:.4f}'.format(
-                epoch, i, acc0, acc, t_used, model.thresh.item(), model.tp))
+            if i%20==0:
+                t_used = utils.time_str(timer_used.t())
+                utils.log('epoch {}, episode {}, Classifier Acc {:.4f}, Localized Classifier Acc {:.4f} '
+                          'AllTime {} thresh {:.4f} tp {:.4f}'.format(
+                    epoch, i, acc0, acc, t_used, model.thresh.item(), model.tp))
 
         t_epoch = utils.time_str(timer_epoch.t())
         utils.log('=========finish epoch {}========== \n '

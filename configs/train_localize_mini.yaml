@@ -22,7 +22,7 @@ n_query: 15
 train_batches: 200
 ep_per_batch: 1
 
-max_epoch: 3   # max epoch for meta train
+max_epoch: 10   # max epoch for meta train
 optimizer: sgd
 optimizer_args: {lr: 0.01, weight_decay: 5.e-4}
 
