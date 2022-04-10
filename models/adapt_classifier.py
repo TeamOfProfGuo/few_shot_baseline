@@ -25,7 +25,7 @@ class AdaptClassifier(nn.Module):
         self.classifier = models.make(classifier, **classifier_args)
 
         if meta_train:
-            self.mid = 23
+            self.feat_level = meta_train_args['feat_level']
             self.norm = 'norm'
             if meta_train_args['learn_temp']:
                 self.temp = nn.Parameter(torch.tensor(meta_train_args['temp']))
@@ -42,12 +42,17 @@ class AdaptClassifier(nn.Module):
             else:
                 self.tp = 1.0
 
-            if self.mid == 23:
+            if self.feat_level == 23:
                 fea_dim = 128+256
-            else:
+            elif self.feat_level == 34:
                 fea_dim = 256+512
-            reduce_dim=256
-            self.down_mid =  nn.Conv2d(fea_dim, reduce_dim, kernel_size=1, padding=0, bias=False)
+            elif self.feat_level == 4:
+                fea_dim = 512
+
+            reduce_dim = meta_train_args['reduce_dim']
+            self.down_mid = nn.Conv2d(fea_dim, reduce_dim, kernel_size=1, padding=0, bias=False)
+            if fea_dim == reduce_dim:
+                self.down_mid.weight.data.fill_(1.0)
                 #nn.ReLU(inplace=True),
                 # nn.Dropout2d(p=0.5)
 
@@ -176,8 +181,12 @@ class AdaptClassifier(nn.Module):
             cam_i = cam_i + bias_i       # 单个img针对所有class的CAM, 其长度取决于：选取了多少个y_idx
             cam_lst.append(cam_i.view(cam_i.shape[0], h, w))        # list, 每个element[len(idx), h, w]
 
-        if self.mid ==23:
-            mid_feat = torch.cat( (F.interpolate(feat2,size=feat3.shape[-2:]), feat3), dim=1 )  #[1, ch, h, w]
+        if self.feat_level ==23:
+            mid_feat = torch.cat( (F.interpolate(feat2,size=feat3.shape[-2:]), feat3), dim=1 )  # [1,ch,h,w]
+        elif self.feat_level == 34:
+            mid_feat = torch.cat( (F.interpolate(feat3,size=feat4.shape[-2:]), feat4), dim=1 )  # [1,ch,h,w]
+        elif self.feat_level == 4:
+            mid_feat = feat4
         return cam_lst, class_idx, logits, mid_feat
         # cam_lst:[100]每项[len(idx],5, 5],class_idx:[100,5way]或者[100,1], logits:[100,5way], mid_feat[100, 384, 10, 10]
 
