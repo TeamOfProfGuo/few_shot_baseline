@@ -172,10 +172,11 @@ def main(config):
                         acc = utils.compute_acc(logits, label)
                     aves['fsa-' + str(n_shot)].add(acc)
 
-        ###==== post each epoch
+        #======================================== post each epoch =============================================
         if lr_scheduler is not None:
             lr_scheduler.step()
 
+        # write to log and tensorboard
         for k, v in aves.items():
             aves[k] = v.item()
 
@@ -183,10 +184,8 @@ def main(config):
         t_used = utils.time_str(timer_used.t())
         t_estimate = utils.time_str(timer_used.t() / epoch * max_epoch)
 
-        if epoch <= max_epoch:
-            epoch_str = str(epoch)
-        else:
-            epoch_str = 'ex'
+
+        epoch_str = str(epoch) if epoch <= max_epoch else 'ex'
         log_str = 'epoch {}, train {:.4f}|{:.4f}'.format(epoch_str, aves['tl'], aves['ta'])
         writer.add_scalars('loss', {'train': aves['tl']}, epoch)
         writer.add_scalars('acc', {'train': aves['ta']}, epoch)
@@ -203,12 +202,10 @@ def main(config):
                 log_str += ' {}: {:.4f}'.format(n_shot, aves[key])
                 writer.add_scalars('acc', {key: aves[key]}, epoch)
 
-        if epoch <= max_epoch:
-            log_str += ', {} {}/{}'.format(t_epoch, t_used, t_estimate)
-        else:
-            log_str += ', {}'.format(t_epoch)
+        log_str += ', {} {}/{}'.format(t_epoch, t_used, t_estimate)
         utils.log(log_str)
 
+        # ======== save model
         if config.get('_parallel'):
             model_ = model.module
         else:
@@ -234,8 +231,7 @@ def main(config):
             torch.save(save_obj, os.path.join(save_path, 'epoch-last.pth'))
 
             if (save_epoch is not None) and epoch % save_epoch == 0:
-                torch.save(save_obj, os.path.join(
-                    save_path, 'epoch-{}.pth'.format(epoch)))
+                torch.save(save_obj, os.path.join(save_path, 'epoch-{}.pth'.format(epoch)))
 
             if aves['va'] > max_va:
                 max_va = aves['va']

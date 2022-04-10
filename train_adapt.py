@@ -70,7 +70,7 @@ def main(config):
     if config.get('visualize_datasets'):
         utils.visualize_dataset(val_dataset, 'val_dataset', writer)
     val_sampler = CategoriesSampler(
-        val_dataset.label, 200,
+        val_dataset.label, 100,
         n_way, n_shot + n_query,
         ep_per_batch=ep_per_batch)  # 生成每个batch idx: [320] = 4*5*(1+15)
     val_loader = DataLoader(val_dataset, batch_sampler=val_sampler, num_workers=8, pin_memory=True)  # 共200个batch
@@ -84,7 +84,7 @@ def main(config):
         if config.get('visualize_datasets'):
             utils.visualize_dataset(tval_dataset, 'tval_dataset', writer)
         tval_sampler = CategoriesSampler(
-            tval_dataset.label, 200,
+            tval_dataset.label, 100,
             n_way, n_shot + n_query,
             ep_per_batch=ep_per_batch)  # 生成每个batch idx: [320] = 4*5*(1+15)
         tval_loader = DataLoader(tval_dataset, batch_sampler=tval_sampler, num_workers=8, pin_memory=True)
@@ -179,13 +179,10 @@ def main(config):
             for i, (data, label) in enumerate(loader):  # data:[320, 3, 80, 80]
 
                 x_shot, x_query = fs.split_shot_query(data.cuda(), n_way, n_shot, n_query, ep_per_batch=ep_per_batch)
-                x_shot, x_query = x_shot.squeeze(0), x_query.squeeze(0)  # [5,5,3,80,80],way,shot x_query[75, 3, 80, 80]
-                x_shot = x_shot.view(n_way * n_shot, *x_shot.shape[-3:])  # [25,3,80,80]
-
                 y_shot = fs.make_nk_label(n_way, n_shot, ep_per_batch=ep_per_batch).cuda()
                 y_query = fs.make_nk_label(n_way, n_query, ep_per_batch=ep_per_batch).cuda()  # label for query:[300]
 
-                logits0, logits = model.outer_loop(x_shot, x_query, y_shot, y_query, meta_args)  # [75, 5]
+                logits0, logits = model.outer_loop(x_shot, x_query, y_shot, meta_args)  # [75, 5]
                 loss = F.cross_entropy(logits, y_query)
                 acc0 = utils.compute_acc(logits0, y_query)
                 acc = utils.compute_acc(logits, y_query)

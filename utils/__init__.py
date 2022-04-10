@@ -37,7 +37,7 @@ class Averager():
         self.n += n
 
     def item(self):
-        return self.v
+        return self.v   # 均值
 
 
 class Timer():
