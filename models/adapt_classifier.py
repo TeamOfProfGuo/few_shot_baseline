@@ -131,8 +131,8 @@ class AdaptClassifier(nn.Module):
             feat_conv = self.down_mid(mid_feat)  # [75, 256, 10, 10]
             cam = torch.cat( [l for l in cam_lst], dim=0 ) # [75*5, 5, 5]
 
-            qw_feat = weighted_feat(feat_conv, cam, norm=self.norm, T=self.temp, thresh=self.thresh)  # [375, 256]
-            qw_feat = qw_feat.view(75, 5, 256)  # 75 n_query, 5way, 256channel
+            qw_feat = weighted_feat(feat_conv, cam, norm=self.norm, T=self.temp, thresh=self.thresh)  # [375, 256] 每个query对应5(way)个weighted feature
+            qw_feat = qw_feat.view(y_shot.shape[0], n_way, -1)  # 75 n_query, 5way, 256channel
             logits = utils.compute_logits_localize(qw_feat, protos, metric='cos', temp=self.tp)  # [75,5]
 
             # 结束本episode的计算，输出结果
