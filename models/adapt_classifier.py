@@ -35,7 +35,7 @@ class AdaptClassifier(nn.Module):
             if meta_train_args['learn_thresh']:
                 self.thresh = nn.Parameter(torch.tensor(meta_train_args['thresh']))
             else:
-                self.thresh = meta_train_args['thresh']
+                self.thresh = meta_train_args['thresh']   # 因为我后面要用 thresh.repeat()
 
             if meta_train_args['learn_tp']:
                 self.tp = nn.Parameter(torch.tensor(1.0))
@@ -56,7 +56,7 @@ class AdaptClassifier(nn.Module):
         x = self.classifier(x)
         return x
 
-    def inner_loop(self, x_shot, s_label, aug=False, init_weight=False):
+    def inner_loop(self, x_shot, s_label, aug=False, init_weight=False):   # x_shot[N,3,h,w]
 
         # finetune linear classifier
         inner_optimizer = torch.optim.SGD(self.classifier.parameters(), lr=0.01, momentum=0.9, dampening=0.9,
@@ -91,54 +91,54 @@ class AdaptClassifier(nn.Module):
             if epoch%50==1:
                 print('the loss after epoch {} is {}'.format(epoch, epoch_loss/n_iter))
 
-    def outer_loop(self, x_shot, x_query, y_shot, y_query, meta_args):
+    def outer_loop(self, x_s, x_q, y_s, meta_args):
 
-        # ================== 训练classifier =====================
-        self.train()
-        self.reset_cls_weight()
-        self.inner_loop(x_shot, y_shot, init_weight=False)  # 更新的weight在get_CAM中使用
+        assert x_s.dim()==6, "x_shot should have 5 dim: eps, n_way, n_shot, ch, h, w"
+        eps, n_way, n_shot, ch, h, w = x_s.shape
+        y_s = y_s.view(eps, -1)
 
-        # ==================== 计算prototype ==================
-        self.eval()
+        q_logits0, q_logits = [], []
 
-        sw_feat = []   # support weighted feature
-        cam_lst, cls_id, logits, mid_feat = self.get_CAM(x_shot, y_shot)
-        feat_conv = self.down_mid(mid_feat)           # [25,256,10,10]
-        cam = torch.cat( [l for l in cam_lst], dim=0) # [25, 5, 5]
-        for i in range(len(x_shot)):
-            x = x_shot[i:i + 1]
-            y = y_shot[i:i + 1]
-            cam, cls_id, _, mid_feat = self.get_CAM(x, y)
-            cam = cam[0]
-            feat_conv = self.down_mid(mid_feat).squeeze(0)
-            feat = weighted_feat(feat_conv, cam, norm=self.norm,  T=self.temp, thresh=self.thresh)  # 当前图片的prototype/weighted feature  #dim [512]
-            sw_feat.append(feat)
+        for ep in range(eps):  # 针对其中一个episode predict logits for the query images
+            x_shot = x_s[ep].view(n_way*n_shot, ch, h, w)
+            y_shot = y_s[ep]
+            x_query = x_q[ep]
 
-        sw_feat = torch.cat([feat.unsqueeze(dim=0) for feat in sw_feat], dim=0)  # [25, 512]
-        sw_feat = sw_feat.view(meta_args['n_way'], meta_args['n_shot'], -1)
-        protos = sw_feat.mean(dim=1)  # [5, 512]
+            # ================== 训练classifier =====================
+            self.train()
+            self.reset_cls_weight()
+            self.inner_loop(x_shot, y_shot, init_weight=False)  # 更新的weight在get_CAM中使用
 
-        # =============== 根据prototype对query分类 ==================
-        q_logits0, q_logits=[], []
-        for i in range(len(x_query)):
-            x = x_query[i: i + 1]  # [1,3,80,80]
-            cam, cls_id, logits0, mid_feat = self.get_CAM(x)  # No y input, 会输出5个class所对应的cam
-            q_logits0.append(logits0.squeeze(0))
+            # ==================== 计算prototype ==================
+            self.eval()
 
-            cls_feat = []
-            for j in range(len(cam)):
-                feat_conv = self.down_mid(mid_feat).squeeze(0)
-                feat = weighted_feat(feat_conv, cam[j], norm=self.norm, T=self.temp, thresh=self.thresh)
-                cls_feat.append(feat)
-            q_feat = torch.cat([feat.unsqueeze(dim=0) for feat in cls_feat], dim=0)  # [5, 512]对应5个class
-            logits = utils.compute_logits_localize(q_feat, protos, metric='cos', temp=self.tp) # [5]
+            cam_lst, cls_id, logits, mid_feat = self.get_CAM(x_shot, y_shot)  # cam_lst element: [1, 5, 5]
+            feat_conv = self.down_mid(mid_feat)           # [25,256,10,10]
+            cam = torch.cat( [l for l in cam_lst], dim=0) # [25, 5, 5]
+
+            # support weighted feature
+            sw_feat = weighted_feat(feat_conv, cam, norm=self.norm,  T=self.temp, thresh=self.thresh)  #[25, 256]
+            sw_feat = sw_feat.view(meta_args['n_way'], meta_args['n_shot'], -1)  # [5, 5, 256]
+            protos = sw_feat.mean(dim=1)  # [5, 256]
+
+            # =============== 根据prototype对query分类 ==================
+            cam_lst, cls_id, logits0, mid_feat = self.get_CAM(x_query) # cam_lst element [5, 5, 5]
+            feat_conv = self.down_mid(mid_feat)  # [75, 256, 10, 10]
+            cam = torch.cat( [l for l in cam_lst], dim=0 ) # [75*5, 5, 5]
+
+            qw_feat = weighted_feat(feat_conv, cam, norm=self.norm, T=self.temp, thresh=self.thresh)  # [375, 256]
+            qw_feat = qw_feat.view(75, 5, 256)  # 75 n_query, 5way, 256channel
+            logits = utils.compute_logits_localize(qw_feat, protos, metric='cos', temp=self.tp)  # [75,5]
+
+            # 结束本episode的计算，输出结果
+            q_logits0.append(logits0)
             q_logits.append(logits)
 
-        logits0 = torch.cat([l.unsqueeze(0) for l in q_logits0], dim=0)  # [75, 5]
-        logits  = torch.cat([l.unsqueeze(0) for l in q_logits ], dim=0)  # [75, 5]
-        return logits0, logits
+        q_logits0 = torch.cat(q_logits0, dim=0)
+        q_logits = torch.cat(q_logits, dim=0)
+        return q_logits0, q_logits
 
-    def get_CAM(self, x, y=None):  # 只accept一张图片 x: [B,3,h,w] y:[1]
+    def get_CAM(self, x, y=None):  # accept同一episode中的多张图片 x: [B,3,h,w] y:[1]
         if self.backbone == 'resnet12':
             layer_lst =['layer2', 'layer3', 'layer4']
 
