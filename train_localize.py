@@ -159,13 +159,13 @@ def main(config):
             if i%20==0:
                 t_used = utils.time_str(timer_used.t())
                 utils.log('epoch {}, episode {}, Classifier Acc {:.4f}, Localized Classifier Acc {:.4f} '
-                          'AllTime {} thresh {:.4f} tp {:.4f}'.format(
-                    epoch, i, acc0, acc, t_used, model.thresh.item(), model.tp))
+                          'AllTime {} thresh {:.4f} temp {:.4f}'.format(
+                    epoch, i, acc0, acc, t_used, model.thresh.item(), model.temp))
 
         t_epoch = utils.time_str(timer_epoch.t())
         utils.log('=========finish epoch {}========== \n '
-            'Overall Classifier Acc {:.4f}, Localized Classifier Acc {:.4f} EpochTime {} thresh {:.4f} tp {:.4f}'.format(
-            epoch, aves['ta0'].v, aves['ta'].v, t_epoch, model.thresh.item(), model.tp ))
+            'Overall Classifier Acc {:.4f}, Localized Classifier Acc {:.4f} EpochTime {} thresh {:.4f} temp {:.4f}'.format(
+            epoch, aves['ta0'].v, aves['ta'].v, t_epoch, model.thresh.item(), model.temp ))
 
         # ========= eval
         model.eval()

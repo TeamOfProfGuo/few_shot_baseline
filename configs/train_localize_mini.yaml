@@ -12,7 +12,7 @@ model_args:
     classifier: linear-classifier 
     classifier_args: {n_classes: 64}   # num of classes should == n_way
     meta_train: True
-    meta_train_args: {learn_thresh: True, thresh: 0.0, learn_temp: False, temp: 2.0, learn_tp: False}
+    meta_train_args: {learn_thresh: True, thresh: 0.0, learn_temp: True, temp: 2.0, learn_tp: False}
 
 load_encoder: ./save/classifier_mini-imagenet_resnet12/epoch-last.pth
 
