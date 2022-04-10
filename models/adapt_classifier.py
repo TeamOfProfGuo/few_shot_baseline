@@ -100,14 +100,14 @@ class AdaptClassifier(nn.Module):
 
         assert x_s.dim()==6, "x_shot should have 5 dim: eps, n_way, n_shot, ch, h, w"
         eps, n_way, n_shot, ch, h, w = x_s.shape
-        y_s = y_s.view(eps, -1)
+        y_s = y_s.view(eps, -1)  # [ep, 25]
 
         q_logits0, q_logits = [], []
 
         for ep in range(eps):  # 针对其中一个episode predict logits for the query images
             x_shot = x_s[ep].view(n_way*n_shot, ch, h, w)
             y_shot = y_s[ep]
-            x_query = x_q[ep]
+            x_query = x_q[ep]    # [73,3,80,80]
 
             # ================== 训练classifier =====================
             self.train()
@@ -129,10 +129,10 @@ class AdaptClassifier(nn.Module):
             # =============== 根据prototype对query分类 ==================
             cam_lst, cls_id, logits0, mid_feat = self.get_CAM(x_query) # cam_lst element [5, 5, 5]
             feat_conv = self.down_mid(mid_feat)  # [75, 256, 10, 10]
-            cam = torch.cat( [l for l in cam_lst], dim=0 ) # [75*5, 5, 5]
+            cam = torch.cat( [l for l in cam_lst], dim=0 ) # [75*5, 5, 5] 每个query img对应5(way)个cam
 
             qw_feat = weighted_feat(feat_conv, cam, norm=self.norm, T=self.temp, thresh=self.thresh)  # [375, 256] 每个query对应5(way)个weighted feature
-            qw_feat = qw_feat.view(y_shot.shape[0], n_way, -1)  # 75 n_query, 5way, 256channel
+            qw_feat = qw_feat.view(x_query.shape[0], n_way, -1)  # 75 n_query, 5way, 256channel
             logits = utils.compute_logits_localize(qw_feat, protos, metric='cos', temp=self.tp)  # [75,5]
 
             # 结束本episode的计算，输出结果
