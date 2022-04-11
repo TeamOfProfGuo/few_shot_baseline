@@ -13,7 +13,7 @@ model_args:
     classifier_args: {n_classes: 64}   # num of classes should == n_way
     meta_train: True
     meta_train_args: {learn_thresh: True, thresh: 0.0, learn_temp: False, temp: 2.0, learn_tp: False, feat_level: 4,
-                      reduce_dim: 512, feat_adapt: 'idt'}
+                      reduce_dim: 512, feat_adapt: 'lr'}
 
 load_encoder: ./save/classifier_mini-imagenet_resnet12/epoch-last.pth
 
