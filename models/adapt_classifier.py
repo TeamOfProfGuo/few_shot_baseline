@@ -50,10 +50,13 @@ class AdaptClassifier(nn.Module):
                 fea_dim = 512
 
             reduce_dim = meta_train_args['reduce_dim']
-            self.down_mid = nn.Sequential(nn.Linear(fea_dim, fea_dim),
-                                          nn.ReLU()                    # 没有必要有negtive weight
-                                          )
 
+            if meta_train_args['feat_adapt'] == 'idt':
+                self.down_mid == nn.Identity()
+            elif meta_train_args['feat_adapt'] == 'lr':
+                self.down_mid = nn.Sequential(nn.Linear(fea_dim, fea_dim),
+                                              nn.ReLU()                    # 没有必要有negative weight
+                                              )
 
     def forward(self, x):  # 用于pretraining
         x = self.encoder(x)
@@ -117,7 +120,6 @@ class AdaptClassifier(nn.Module):
             self.eval()
 
             cam_lst, cls_id, logits, mid_feat = self.get_CAM(x_shot, y_shot)  # cam_lst element: [1, 5, 5]
-            #feat_conv = self.down_mid(mid_feat)           # [25,256,10,10]
             cam = torch.cat( [l for l in cam_lst], dim=0) # [25, 5, 5]
 
             # support weighted feature
@@ -127,21 +129,17 @@ class AdaptClassifier(nn.Module):
 
             # =============== 根据prototype对query分类 ==================
             cam_lst, cls_id, logits0, mid_feat = self.get_CAM(x_query) # cam_lst element [5, 5, 5]
-            #feat_conv = self.down_mid(mid_feat)  # [75, 256, 10, 10]
             cam = torch.cat( [l for l in cam_lst], dim=0 ) # [75*5, 5, 5] 每个query img对应5(way)个cam
-
             qw_feat = weighted_feat(mid_feat, cam, norm=self.norm, T=self.temp, thresh=self.thresh)  # [375, 256] 每个query对应5(way)个weighted feature
-            qw_feat = qw_feat.view(x_query.shape[0], n_way, -1)  # 75 n_query, 5way, 256channel
 
             # =========== transform protos and qw_feat ==============
             task_rep = protos.mean(dim=0).unsqueeze(0)   # [1, 512]
-
-
-
-
+            adapt_wt = self.down_mid(task_rep)  # [1, 512]
+            protos = torch.mul(protos, adapt_wt)  # [5, 512]
+            qw_feat = torch.mul(qw_feat, adapt_wt)  # [375, 512] 375=75*5way
+            qw_feat = qw_feat.view(x_query.shape[0], n_way, -1)  # 75 n_query, 5way, 256channel
 
             logits = utils.compute_logits_localize(qw_feat, protos, metric='cos', temp=self.tp)  # [75,5]
-
             # 结束本episode的计算，输出结果
             q_logits0.append(logits0)
             q_logits.append(logits)
