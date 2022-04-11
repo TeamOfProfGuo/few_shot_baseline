@@ -52,7 +52,7 @@ class AdaptClassifier(nn.Module):
             reduce_dim = meta_train_args['reduce_dim']
 
             if meta_train_args['feat_adapt'] == 'idt':
-                self.down_mid == nn.Identity()
+                self.down_mid = nn.Identity()
             elif meta_train_args['feat_adapt'] == 'lr':
                 self.down_mid = nn.Sequential(nn.Linear(fea_dim, fea_dim),
                                               nn.ReLU()                    # 没有必要有negative weight
