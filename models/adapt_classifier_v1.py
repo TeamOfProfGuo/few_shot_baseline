@@ -50,10 +50,11 @@ class AdaptClassifier(nn.Module):
                 fea_dim = 512
 
             reduce_dim = meta_train_args['reduce_dim']
-            self.down_mid = nn.Sequential(nn.Linear(fea_dim, fea_dim),
-                                          nn.ReLU()                    # 没有必要有negtive weight
-                                          )
-
+            self.down_mid = nn.Conv2d(fea_dim, reduce_dim, kernel_size=1, padding=0, bias=False)
+            if fea_dim == reduce_dim:
+                self.down_mid.weight.data.fill_(1.0)
+                #nn.ReLU(inplace=True),
+                # nn.Dropout2d(p=0.5)
 
     def forward(self, x):  # 用于pretraining
         x = self.encoder(x)
@@ -117,29 +118,21 @@ class AdaptClassifier(nn.Module):
             self.eval()
 
             cam_lst, cls_id, logits, mid_feat = self.get_CAM(x_shot, y_shot)  # cam_lst element: [1, 5, 5]
-            #feat_conv = self.down_mid(mid_feat)           # [25,256,10,10]
+            feat_conv = self.down_mid(mid_feat)           # [25,256,10,10]
             cam = torch.cat( [l for l in cam_lst], dim=0) # [25, 5, 5]
 
             # support weighted feature
-            sw_feat = weighted_feat(mid_feat, cam, norm=self.norm,  T=self.temp, thresh=self.thresh)  #[25, 256]
+            sw_feat = weighted_feat(feat_conv, cam, norm=self.norm,  T=self.temp, thresh=self.thresh)  #[25, 256]
             sw_feat = sw_feat.view(meta_args['n_way'], meta_args['n_shot'], -1)  # [5, 5, 256]
             protos = sw_feat.mean(dim=1)  # [5, 256]
 
             # =============== 根据prototype对query分类 ==================
             cam_lst, cls_id, logits0, mid_feat = self.get_CAM(x_query) # cam_lst element [5, 5, 5]
-            #feat_conv = self.down_mid(mid_feat)  # [75, 256, 10, 10]
+            feat_conv = self.down_mid(mid_feat)  # [75, 256, 10, 10]
             cam = torch.cat( [l for l in cam_lst], dim=0 ) # [75*5, 5, 5] 每个query img对应5(way)个cam
 
-            qw_feat = weighted_feat(mid_feat, cam, norm=self.norm, T=self.temp, thresh=self.thresh)  # [375, 256] 每个query对应5(way)个weighted feature
+            qw_feat = weighted_feat(feat_conv, cam, norm=self.norm, T=self.temp, thresh=self.thresh)  # [375, 256] 每个query对应5(way)个weighted feature
             qw_feat = qw_feat.view(x_query.shape[0], n_way, -1)  # 75 n_query, 5way, 256channel
-
-            # =========== transform protos and qw_feat ==============
-            task_rep = protos.mean(dim=0).unsqueeze(0)   # [1, 512]
-
-
-
-
-
             logits = utils.compute_logits_localize(qw_feat, protos, metric='cos', temp=self.tp)  # [75,5]
 
             # 结束本episode的计算，输出结果
