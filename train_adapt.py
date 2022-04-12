@@ -159,10 +159,13 @@ def main(config):
 
             if i%20==0:
                 t_used = utils.time_str(timer_used.t())
-                utils.log('epoch {}, episode {}, Cls Acc {:.4f}, Localized Cls Acc {:.4f}, Query Loss {:.4f}'
+                log_msg = 'epoch {}, episode {}, Cls Acc {:.4f}, Localized Cls Acc {:.4f}, Query Loss {:.4f} ' \
                           'AllTime {} thresh {:.4f} tp {:.4f}'.format(
                     epoch, i, acc0, acc, loss.item(),
-                    t_used, model.thresh, model.tp))
+                    t_used, model.thresh, model.tp)
+                if model.down_mid.dim() == 0 :
+                     log_msg += ', wt_low {:.4f}'.format(model.down_mid)
+                utils.log(log_msg)
 
         t_epoch = utils.time_str(timer_epoch.t())
         utils.log('=========finish epoch {}========== \n '
