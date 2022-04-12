@@ -23,7 +23,7 @@ from dataset.samplers import CategoriesSampler
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--config', default='configs/train_adapt_mini.yaml')
+parser.add_argument('--config', default='configs/train_adapt_mini_v2.yaml')
 parser.add_argument('--name', default=None)
 parser.add_argument('--tag', default=None)
 parser.add_argument('--gpu', default='0')
