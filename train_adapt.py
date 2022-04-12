@@ -157,7 +157,7 @@ def main(config):
             aves['ta'].add(acc)
             aves['ta0'].add(acc0)
 
-            if i%20==0:
+            if i%10==0 or (epoch==1 and i%2==0):
                 t_used = utils.time_str(timer_used.t())
                 log_msg = 'epoch {}, episode {}, Cls Acc {:.4f}, Localized Cls Acc {:.4f}, Query Loss {:.4f} ' \
                           'AllTime {} thresh {:.4f} tp {:.4f}'.format(
