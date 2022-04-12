@@ -115,7 +115,7 @@ def main(config):
 
     param_list = []  # 在meta train过程中只更新 meta参数（thresh, temp, tp)
     for name, param in model.named_parameters():
-        if name in ['thresh', 'tp', 'temp', 'down_mid.weight']:
+        if name in ['thresh', 'tp', 'temp', 'down_mid.weight'] or 'down_mid' in name:
             param_list.append(param)
     optimizer, lr_scheduler = utils.make_optimizer(param_list, config['optimizer'], **config['optimizer_args'])
 
@@ -129,7 +129,7 @@ def main(config):
 
     for epoch in range(1, max_epoch + 1):
         timer_epoch.s()
-        aves_keys = ['tl', 'ta', 'ta0', 'vl', 'va', 'va0', 'tvl', 'tva', 'tva0']  # 'ca': base_classifier Acc, 'la': Localized Proto Acc
+        aves_keys = ['tl', 'ta', 'ta0', 'vl', 'va', 'va0', 'tvl', 'tva', 'tva0']  # 'a0': base_classifier Acc, 'a': Localized Proto Acc, 'l': loss
         aves = {k: utils.Averager() for k in aves_keys}
 
         ###==== train
@@ -153,19 +153,23 @@ def main(config):
             loss.backward()
             optimizer.step()
 
+            aves['tl'].add(loss.item())
             aves['ta'].add(acc)
             aves['ta0'].add(acc0)
 
             if i%20==0:
                 t_used = utils.time_str(timer_used.t())
-                utils.log('epoch {}, episode {}, Classifier Acc {:.4f}, Localized Classifier Acc {:.4f} '
+                utils.log('epoch {}, episode {}, Cls Acc {:.4f}, Localized Cls Acc {:.4f}, Query Loss {:.4f}'
                           'AllTime {} thresh {:.4f} tp {:.4f}'.format(
-                    epoch, i, acc0, acc, t_used, model.thresh.item(), model.tp))
+                    epoch, i, acc0, acc, loss.item(),
+                    t_used, model.thresh, model.tp))
 
         t_epoch = utils.time_str(timer_epoch.t())
         utils.log('=========finish epoch {}========== \n '
-            'Overall Classifier Acc {:.4f}, Localized Classifier Acc {:.4f} EpochTime {} thresh {:.4f} tp {:.4f}'.format(
-            epoch, aves['ta0'].v, aves['ta'].v, t_epoch, model.thresh.item(), model.tp ))
+                  'Epoch Cls Acc {:.4f}, Localized Cls Acc {:.4f}, Query Loss {:.4f}, '
+                  'EpochTime {}, thresh {:.4f}, tp {:.4f}'.format(
+            epoch, aves['ta0'].v, aves['ta'].v, aves['tl'].v,
+            t_epoch, model.thresh, model.tp ))
 
         # ========= eval
         model.eval()
@@ -187,13 +191,16 @@ def main(config):
                 acc0 = utils.compute_acc(logits0, y_query)
                 acc = utils.compute_acc(logits, y_query)
 
-                aves[name_l].add(loss.item())
-                aves[name_a].add(acc)
-                aves[name_a+'0'].add(acc0)
+                aves[name_l].add(loss.item())   # loss
+                aves[name_a].add(acc)           # localized cls acc
+                aves[name_a+'0'].add(acc0)      # base cls acc
         utils.log('=========finish epoch {}========== \n '
-                  'val loss {:.4f}, val acc0 {:.4f}, val acc {:.4f}, tval loss {:.4f} tval acc0 {:.4f}, tval acc {:.4f}'.format(
-            epoch, aves['vl'].v, aves['va0'].v, aves['va'].v,  aves['tvl'].v, aves['tva0'].v, aves['tva'].v
+                  'val acc0 {:.4f}, val acc {:.4f}, val loss {:.4f}, '
+                  'tval acc0 {:.4f}, tval acc {:.4f}, tval loss {:.4f}'.format(
+            epoch, aves['va0'].v, aves['va'].v, aves['vl'].v,
+                   aves['tva0'].v, aves['tva'].v, aves['tvl'].v
         ))
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

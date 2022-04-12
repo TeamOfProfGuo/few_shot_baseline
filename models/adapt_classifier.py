@@ -43,20 +43,21 @@ class AdaptClassifier(nn.Module):
                 self.tp = 1.0
 
             if self.feat_level == 23:
-                fea_dim = 128+256
+                self.fea_dim = [128,256]
             elif self.feat_level == 34:
-                fea_dim = 256+512
+                self.fea_dim = [256,512]
             elif self.feat_level == 4:
-                fea_dim = 512
+                self.fea_dim = [512]
 
-            reduce_dim = meta_train_args['reduce_dim']
-
+            self.feat_adapt = meta_train_args['feat_adapt']
             if meta_train_args['feat_adapt'] == 'idt':
                 self.down_mid = nn.Identity()
             elif meta_train_args['feat_adapt'] == 'lr':
-                self.down_mid = nn.Sequential(nn.Linear(fea_dim, fea_dim),
+                self.down_mid = nn.Sequential(nn.Linear(sum(self.fea_dim), sum(self.fea_dim)),
                                               nn.ReLU()                    # 没有必要有negative weight
                                               )
+            elif meta_train_args['feat_adapt'] == 'wt':      # 分别求low_level和high level的similarity然后求和
+                self.down_mid = nn.Parameter(torch.tensor(0.1))
 
     def forward(self, x):  # 用于pretraining
         x = self.encoder(x)
@@ -120,7 +121,7 @@ class AdaptClassifier(nn.Module):
             self.eval()
 
             cam_lst, cls_id, logits, mid_feat = self.get_CAM(x_shot, y_shot)  # cam_lst element: [1, 5, 5]
-            cam = torch.cat( [l for l in cam_lst], dim=0) # [25, 5, 5]
+            cam = torch.cat( [l for l in cam_lst], dim=0)  # [25, 5, 5]
 
             # support weighted feature
             sw_feat = weighted_feat(mid_feat, cam, norm=self.norm,  T=self.temp, thresh=self.thresh)  #[25, 256]
@@ -128,18 +129,29 @@ class AdaptClassifier(nn.Module):
             protos = sw_feat.mean(dim=1)  # [5, 256]
 
             # =============== 根据prototype对query分类 ==================
-            cam_lst, cls_id, logits0, mid_feat = self.get_CAM(x_query) # cam_lst element [5, 5, 5]
-            cam = torch.cat( [l for l in cam_lst], dim=0 ) # [75*5, 5, 5] 每个query img对应5(way)个cam
+            cam_lst, cls_id, logits0, mid_feat = self.get_CAM(x_query)  # cam_lst element [5, 5, 5]
+            cam = torch.cat( [l for l in cam_lst], dim=0 )  # [75*5, 5, 5] 每个query img对应5(way)个cam
             qw_feat = weighted_feat(mid_feat, cam, norm=self.norm, T=self.temp, thresh=self.thresh)  # [375, 256] 每个query对应5(way)个weighted feature
 
             # =========== transform protos and qw_feat ==============
-            task_rep = protos.mean(dim=0).unsqueeze(0)   # [1, 512]
-            adapt_wt = self.down_mid(task_rep)  # [1, 512]
-            protos = torch.mul(protos, adapt_wt)  # [5, 512]
-            qw_feat = torch.mul(qw_feat, adapt_wt)  # [375, 512] 375=75*5way
-            qw_feat = qw_feat.view(x_query.shape[0], n_way, -1)  # 75 n_query, 5way, 256channel
+            if self.feat_adapt not in ['wt']:  # 基于unified feature
+                task_rep = protos.mean(dim=0).unsqueeze(0)   # [1, 512]
+                adapt_wt = self.down_mid(task_rep)  # [1, 512]
+                protos = torch.mul(protos, adapt_wt)  # [5, 512]
+                qw_feat = torch.mul(qw_feat, adapt_wt)  # [375, 512] 375=75*5way
+                qw_feat = qw_feat.view(x_query.shape[0], n_way, -1)  # 75 n_query, 5way, 256channel
+                logits = utils.compute_logits_localize(qw_feat, protos, metric='cos')  # [75,5] 其实就是求了similarity
+            else:
+                dim1, dim2 = self.fea_dim
+                sub_protos1, sub_protos2 = protos[:, 0:dim1], protos[:, dim1:]     # [5,256], [5,512]
+                sub_qwfeat1 = qw_feat[:,0:dim1].view(x_query.shape[0], n_way, -1)  # [75,5,256]
+                sub_qwfeat2 = qw_feat[:,dim1: ].view(x_query.shape[0], n_way, -1)
+                sub_logits1 = utils.compute_logits_localize(sub_qwfeat1, sub_protos1, metric='cos')  # low level
+                sub_logits2 = utils.compute_logits_localize(sub_qwfeat2, sub_protos2, metric='cos')   # high level
+                logits = sub_logits1 * self.down_mid + sub_logits2
 
-            logits = utils.compute_logits_localize(qw_feat, protos, metric='cos', temp=self.tp)  # [75,5]
+            logits = logits*self.tp
+
             # 结束本episode的计算，输出结果
             q_logits0.append(logits0)
             q_logits.append(logits)

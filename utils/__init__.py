@@ -100,19 +100,19 @@ def compute_logits(feat, proto, metric='dot', temp=1.0):  # proto:[4,5,512]/[ep,
     return logits * temp
 
 
-def compute_logits_localize(q_feat, protos, metric='cos', temp=1.0):
+def compute_logits_localize(q_feat, protos, metric='cos'):
     if q_feat.dim()==2:
         # q_feat对应一个query img的weighted feat wrt. CAM for different class
         if metric == 'cos':
             protos = F.normalize(protos, dim=-1)  # [5, 512]
             q_feat = F.normalize(q_feat, dim=-1)  # [5, 512]
             sim = torch.sum(q_feat * protos, dim=-1)  # [5]
-        return sim*temp
+        return sim
     elif q_feat.dim() == 3:
         protos = F.normalize(protos, dim=-1)  # [5, 256]
         q_feat = F.normalize(q_feat, dim=-1)  # [75, 5, 256]
-        out = torch.sum(torch.mul(q_feat, protos), dim=-1)  # [75, 5]
-        return out  # [75,5]
+        sim = torch.sum(torch.mul(q_feat, protos), dim=-1)  # [75, 5]
+        return sim  # [75,5]
 
 
 

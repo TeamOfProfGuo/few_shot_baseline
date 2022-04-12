@@ -103,7 +103,7 @@ for name, param in model.named_parameters():
 
 param_list = []
 for name, param in model.named_parameters():
-    if name in ['thresh', 'tp', 'temp', 'down_mid.weight']:
+    if name in ['thresh', 'tp', 'temp', 'down_mid.weight'] or 'down_mid' in name:
         param_list.append(param)
 
 optimizer, lr_scheduler = utils.make_optimizer(param_list, config['optimizer'], **config['optimizer_args'])

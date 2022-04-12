@@ -118,7 +118,7 @@ class Classifier(nn.Module):
                 feat = weighted_feat(feat_conv.squeeze(dim=0), cam[j], norm=self.norm, T=self.temp, thresh=self.thresh)
                 cls_feat.append(feat)
             q_feat = torch.cat([feat.unsqueeze(dim=0) for feat in cls_feat], dim=0)  # [5, 512]对应5个class
-            logits = utils.compute_logits_localize(q_feat, protos, metric='cos', temp=self.tp) # [5]
+            logits = utils.compute_logits_localize(q_feat, protos, metric='cos') * self.tp # [5]
             q_logits.append(logits)
 
         logits0 = torch.cat([l.unsqueeze(0) for l in q_logits0], dim=0)  # [75, 5]
