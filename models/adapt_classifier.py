@@ -46,12 +46,10 @@ class AdaptClassifier(nn.Module):
                 self.tp = 1.0
 
             self.feat_level = meta_train_args['feat_level']
-            if self.feat_level == 23:
-                self.fea_dim = [128,256]
-            elif self.feat_level == 34:
-                self.fea_dim = [256,512]
-            elif self.feat_level == 4:
-                self.fea_dim = [512]
+            self.fea_dim = []
+            dim = [64, 128, 256, 512]
+            for level in str(self.feat_level):
+                self.fea_dim.append(dim[int(level)-1])
 
             self.feat_adapt = meta_train_args['feat_adapt']
             if meta_train_args['feat_adapt'] == 'idt':
