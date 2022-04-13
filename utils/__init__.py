@@ -109,10 +109,17 @@ def compute_logits_localize(q_feat, protos, metric='cos'):
             sim = torch.sum(q_feat * protos, dim=-1)  # [5]
         return sim
     elif q_feat.dim() == 3:
-        protos = F.normalize(protos, dim=-1)  # [5, 256]
-        q_feat = F.normalize(q_feat, dim=-1)  # [75, 5, 256]
-        sim = torch.sum(torch.mul(q_feat, protos), dim=-1)  # [75, 5]
-        return sim  # [75,5]
+        if metric == 'cos':
+            protos = F.normalize(protos, dim=-1)  # [5, 256]
+            q_feat = F.normalize(q_feat, dim=-1)  # [75, 5, 256]
+            sim = torch.sum(torch.mul(q_feat, protos), dim=-1)  # [75, 5]
+            return sim  # [75,5]
+        elif metric == 'sqr':
+            protos = F.normalize(protos, dim=-1)  # [5, 256]
+            q_feat = F.normalize(q_feat, dim=-1)  # [75, 5, 256]
+            sim = -(q_feat - protos.unsqueeze(0)).pow(2).sum(dim=-1)  # [75,5,256]
+            return sim
+
 
 
 

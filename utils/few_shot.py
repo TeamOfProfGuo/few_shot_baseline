@@ -42,12 +42,12 @@ def weighted_feat(feat, cam, T=0.5, norm='scale', thresh=None, method='percentil
             cam = F.interpolate(cam.unsqueeze(1), size=feat.shape[-2:], mode='bilinear', align_corners=True).squeeze(1)#[25,10,10]
         if norm == 'norm':
             cam = ( cam - torch.mean(cam,dim=[1,2]).view(Nm, 1, 1) )/torch.std(cam, dim=[1,2]).view(Nm, 1, 1)
+            if thresh is not None:
+                cam = torch.relu(cam - thresh * torch.ones_like(cam))
         else:
             cam_min = torch.min(cam.view(Nm,-1), dim=-1)[0].view(Nm, 1, 1)
             cam_max = torch.max(cam.view(Nm,-1), dim=-1)[0].view(Nm, 1, 1)
             cam = ( cam - cam_min ) / (cam_max-cam_min)      # [25, 10, 10]
-        if thresh is not None:
-            cam = torch.relu( cam - thresh*torch.ones_like(cam) )
 
         weight = F.softmax( cam.view(Nm,-1)/T, dim=-1 ).unsqueeze(-1) # [25, 100, 1]   / query: [375,100,1]
         if N<Nm: # only needed for query img, support img的Nm=N

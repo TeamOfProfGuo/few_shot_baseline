@@ -16,32 +16,36 @@ from .models import register
 class AdaptClassifier(nn.Module):
 
     def __init__(self, encoder, encoder_args, classifier, classifier_args,
-                 meta_train, meta_train_args):
+                 meta_train, cam_args,  meta_train_args):
         super().__init__()
         self.backbone = encoder # resnet12
         self.n_classes = classifier_args['n_classes']
         self.encoder = models.make(encoder, **encoder_args)
         classifier_args['in_dim'] = self.encoder.out_dim
         self.classifier = models.make(classifier, **classifier_args)
+        self.meta_train_args = meta_train_args
+        self.cam_args = cam_args
+
+        self.metric = meta_train_args.get('dist', 'cos')
 
         if meta_train:
-            self.feat_level = meta_train_args['feat_level']
-            self.norm = 'norm'
-            if meta_train_args['learn_temp']:
-                self.temp = nn.Parameter(torch.tensor(meta_train_args['temp']))
-            else:
-                self.temp = meta_train_args['temp']
 
-            if meta_train_args['learn_thresh']:
-                self.thresh = nn.Parameter(torch.tensor(meta_train_args['thresh']))
+            if cam_args['learn_thresh']:
+                self.thresh = nn.Parameter(torch.tensor(cam_args['thresh']))
             else:
-                self.thresh = meta_train_args['thresh']   # 因为我后面要用 thresh.repeat()
+                self.thresh = cam_args['thresh']   # 因为我后面要用 thresh.repeat()
+
+            if cam_args['learn_temp']:
+                self.temp = nn.Parameter(torch.tensor(cam_args['temp']))
+            else:
+                self.temp = cam_args['temp']
 
             if meta_train_args['learn_tp']:
                 self.tp = nn.Parameter(torch.tensor(1.0))
             else:
                 self.tp = 1.0
 
+            self.feat_level = meta_train_args['feat_level']
             if self.feat_level == 23:
                 self.fea_dim = [128,256]
             elif self.feat_level == 34:
@@ -96,8 +100,8 @@ class AdaptClassifier(nn.Module):
 
                 epoch_loss += loss
                 n_iter += 1
-            if epoch%50==1:
-                print('the loss after epoch {} is {}'.format(epoch, epoch_loss/n_iter))
+            #if epoch%50==1:
+                #print('the loss after epoch {} is {}'.format(epoch, epoch_loss/n_iter))
 
     def outer_loop(self, x_s, x_q, y_s, meta_args):
 
@@ -124,30 +128,34 @@ class AdaptClassifier(nn.Module):
             cam = torch.cat( [l for l in cam_lst], dim=0)  # [25, 5, 5]
 
             # support weighted feature
-            sw_feat = weighted_feat(mid_feat, cam, norm=self.norm,  T=self.temp, thresh=self.thresh)  #[25, 256]
+            cam_norm = self.cam_args.get('norm', 'norm')
+            sw_feat = weighted_feat(mid_feat, cam, norm=cam_norm,  T=self.temp, thresh=self.thresh)  #[25, 256]
             sw_feat = sw_feat.view(meta_args['n_way'], meta_args['n_shot'], -1)  # [5, 5, 256]
             protos = sw_feat.mean(dim=1)  # [5, 256]
 
             # =============== 根据prototype对query分类 ==================
             cam_lst, cls_id, logits0, mid_feat = self.get_CAM(x_query)  # cam_lst element [5, 5, 5]
             cam = torch.cat( [l for l in cam_lst], dim=0 )  # [75*5, 5, 5] 每个query img对应5(way)个cam
-            qw_feat = weighted_feat(mid_feat, cam, norm=self.norm, T=self.temp, thresh=self.thresh)  # [375, 256] 每个query对应5(way)个weighted feature
+            qw_feat = weighted_feat(mid_feat, cam, norm=cam_norm, T=self.temp, thresh=self.thresh)  # [375, 256] 每个query对应5(way)个weighted feature
 
             # =========== transform protos and qw_feat ==============
             if self.feat_adapt not in ['wt']:  # 基于unified feature
-                task_rep = protos.mean(dim=0).unsqueeze(0)   # [1, 512]
-                adapt_wt = self.down_mid(task_rep)  # [1, 512]
-                protos = torch.mul(protos, adapt_wt)  # [5, 512]
-                qw_feat = torch.mul(qw_feat, adapt_wt)  # [375, 512] 375=75*5way
+                if self.feat_adapt == 'lr':
+                    task_rep = protos.mean(dim=0).unsqueeze(0)   # [1, 512]
+                    adapt_wt = self.down_mid(task_rep)  # [1, 512]
+                    protos = torch.mul(protos, adapt_wt)  # [5, 512]
+                    qw_feat = torch.mul(qw_feat, adapt_wt)  # [375, 512] 375=75*5way
+                elif self.feat_adapt == 'idt':
+                    pass
                 qw_feat = qw_feat.view(x_query.shape[0], n_way, -1)  # 75 n_query, 5way, 256channel
-                logits = utils.compute_logits_localize(qw_feat, protos, metric='cos')  # [75,5] 其实就是求了similarity
+                logits = utils.compute_logits_localize(qw_feat, protos, metric=self.metric)  # [75,5] 其实就是求了similarity
             else:
                 dim1, dim2 = self.fea_dim
                 sub_protos1, sub_protos2 = protos[:, 0:dim1], protos[:, dim1:]     # [5,256], [5,512]
                 sub_qwfeat1 = qw_feat[:,0:dim1].view(x_query.shape[0], n_way, -1)  # [75,5,256]
                 sub_qwfeat2 = qw_feat[:,dim1: ].view(x_query.shape[0], n_way, -1)
-                sub_logits1 = utils.compute_logits_localize(sub_qwfeat1, sub_protos1, metric='cos')  # low level
-                sub_logits2 = utils.compute_logits_localize(sub_qwfeat2, sub_protos2, metric='cos')   # high level
+                sub_logits1 = utils.compute_logits_localize(sub_qwfeat1, sub_protos1, metric=self.metric)  # low level
+                sub_logits2 = utils.compute_logits_localize(sub_qwfeat2, sub_protos2, metric=self.metric)   # high level
                 logits = sub_logits1 * self.down_mid + sub_logits2
 
             logits = logits*self.tp
