@@ -163,7 +163,7 @@ def main(config):
                           'AllTime {} thresh {:.4f} tp {:.4f}'.format(
                     epoch, i, acc0, acc, loss.item(),
                     t_used, model.thresh, model.tp)
-                if model.down_mid.dim() == 0 :
+                if isinstance(model.down_mid, nn.Parameter):
                      log_msg += ', wt_low {:.4f}'.format(model.down_mid)
                 utils.log(log_msg)
 
