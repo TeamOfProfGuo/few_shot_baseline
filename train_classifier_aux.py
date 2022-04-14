@@ -129,7 +129,7 @@ def main(config):
         model.train()
         writer.add_scalar('lr', optimizer.param_groups[0]['lr'], epoch)
 
-        for data, label in tqdm(train_loader, desc='train', leave=False):
+        for i, (data, label) in enumerate(train_loader):
             if torch.cuda.is_available():
                 data, label = data.cuda(), label.cuda()
             logits, logits_aux = model(data)
@@ -151,7 +151,7 @@ def main(config):
         # ========== eval
         if eval_val:
             model.eval()
-            for data, label in tqdm(val_loader, desc='val', leave=False):
+            for i, (data, label) in enumerate(val_loader):
                 if torch.cuda.is_available():
                     data, label = data.cuda(), label.cuda()
                 with torch.no_grad():
@@ -166,7 +166,7 @@ def main(config):
             fs_model.eval()
             for i, n_shot in enumerate(n_shots):   # 分别对1shot 和 5shot 测验
                 np.random.seed(0)
-                for data, _ in enumerate(fs_loaders[i]): # data:[320,3,80,80],320=4(ep)*5*(1+15)
+                for i, (data, _) in enumerate(fs_loaders[i]): # data:[320,3,80,80],320=4(ep)*5*(1+15)
                     # x_shot:[4,5(way),1(shot),3,80,90], x_query:[4,75(n_q*way),3,80,80]
                     x_shot, x_query = fs.split_shot_query(data.cuda(), n_way, n_shot, n_query, ep_per_batch=4)
                     label = fs.make_nk_label(n_way, n_query, ep_per_batch=4).cuda() # label for query only (based on order)
