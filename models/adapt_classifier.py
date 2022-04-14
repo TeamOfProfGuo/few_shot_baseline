@@ -210,6 +210,8 @@ class AdaptClassifier(nn.Module):
             mid_feat = torch.cat( (F.interpolate(feat3,size=feat4.shape[-2:]), feat4), dim=1 )  # [1,ch,h,w]
         elif self.feat_level == 4:
             mid_feat = feat4
+        elif self.feat_level == 3:
+            mid_feat = feat3
         return cam_lst, class_idx, logits, mid_feat
         # cam_lst:[100]每项[len(idx],5, 5],class_idx:[100,5way]或者[100,1], logits:[100,5way], mid_feat[100, 384, 10, 10]
 
