@@ -11,6 +11,7 @@ from torch.optim import SGD, Adam
 from torch.optim.lr_scheduler import MultiStepLR
 
 from . import few_shot
+from . train_mean import extract_mean
 
 
 _log_path = None
@@ -100,7 +101,7 @@ def compute_logits(feat, proto, metric='dot', temp=1.0):  # proto:[4,5,512]/[ep,
     return logits * temp
 
 
-def compute_logits_localize(q_feat, protos, metric='cos'):
+def compute_logits_localize(q_feat, protos, metric='cos', base_mean=None):
     if q_feat.dim()==2:
         # q_feat对应一个query img的weighted feat wrt. CAM for different class
         if metric == 'cos':
@@ -114,7 +115,10 @@ def compute_logits_localize(q_feat, protos, metric='cos'):
             q_feat = F.normalize(q_feat, dim=-1)  # [75, 5, 256]
             sim = torch.sum(torch.mul(q_feat, protos), dim=-1)  # [75, 5]
             return sim  # [75,5]
-        elif metric == 'sqr':
+        elif metric in ['sqr', 'sqr0']:
+            if metric=='sqr0':
+                protos = protos - base_mean
+                q_feat = q_feat - base_mean
             protos = F.normalize(protos, dim=-1)  # [5, 256]
             q_feat = F.normalize(q_feat, dim=-1)  # [75, 5, 256]
             sim = -(q_feat - protos.unsqueeze(0)).pow(2).sum(dim=-1)  # [75,5,256]
