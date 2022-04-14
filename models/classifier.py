@@ -48,9 +48,9 @@ class Classifier(nn.Module):
 
     def forward(self, x):  # 用于pretraining
         if self.aux:
-            aux_x, x = self.encoder(x)
+            x, x_aux = self.encoder(x)
             x = self.classifier(x)
-            x_aux = self.aux_classifier(aux_x)
+            x_aux = self.aux_classifier(x_aux)
             return x, x_aux
         else:
             x = self.encoder(x)

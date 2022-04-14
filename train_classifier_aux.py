@@ -22,7 +22,7 @@ from dataset.samplers import CategoriesSampler
 def main(config):
     svname = args.name
     if svname is None:
-        svname = 'classifier_{}'.format(config['train_dataset'])
+        svname = 'cls_aux_{}'.format(config['train_dataset'])
         svname += '_' + config['model_args']['encoder']
         clsfr = config['model_args']['classifier']
         if clsfr != 'linear-classifier':
@@ -119,40 +119,43 @@ def main(config):
             train_loader = DataLoader(train_dataset, config['batch_size'], shuffle=True, num_workers=8, pin_memory=True)
 
         timer_epoch.s()
-        aves_keys = ['tl', 'ta', 'vl', 'va']  # train_loss, train_acc, val_loss, val_acc
+        aves_keys = ['tl', 'tla', 'ta', 'vl', 'va']  # 当前epoch 的 train_loss, train_acc, val_loss, val_acc
         if eval_fs:
             for n_shot in n_shots:
                 aves_keys += ['fsa-' + str(n_shot)]
         aves = {k: utils.Averager() for k in aves_keys}
 
-        ###==== train
+        # =========== train
         model.train()
         writer.add_scalar('lr', optimizer.param_groups[0]['lr'], epoch)
 
         for data, label in tqdm(train_loader, desc='train', leave=False):
             if torch.cuda.is_available():
                 data, label = data.cuda(), label.cuda()
-            logits = model(data)
+            logits, logits_aux = model(data)
             loss = F.cross_entropy(logits, label)
+            loss_aux = F.cross_entropy(logits_aux, label)
+            loss_total = loss + loss_aux*config['aux_weight']
             acc = utils.compute_acc(logits, label)
 
             optimizer.zero_grad()
-            loss.backward()
+            loss_total.backward()
             optimizer.step()
 
             aves['tl'].add(loss.item())
+            aves['tla'].add(loss_aux.item())
             aves['ta'].add(acc)
 
             logits = None; loss = None
 
-        #### ===== eval
+        # ========== eval
         if eval_val:
             model.eval()
             for data, label in tqdm(val_loader, desc='val', leave=False):
                 if torch.cuda.is_available():
                     data, label = data.cuda(), label.cuda()
                 with torch.no_grad():
-                    logits = model(data)
+                    logits, _ = model(data)
                     loss = F.cross_entropy(logits, label)
                     acc = utils.compute_acc(logits, label)
                 
@@ -161,9 +164,9 @@ def main(config):
 
         if eval_fs and (epoch % ef_epoch == 0 or epoch == max_epoch + 1):
             fs_model.eval()
-            for i, n_shot in enumerate(n_shots):
+            for i, n_shot in enumerate(n_shots):   # 分别对1shot 和 5shot 测验
                 np.random.seed(0)
-                for data, _ in tqdm(fs_loaders[i], desc='fs-' + str(n_shot), leave=False): # data:[320,3,80,80],320=4(ep)*5*(1+15)
+                for data, _ in enumerate(fs_loaders[i]): # data:[320,3,80,80],320=4(ep)*5*(1+15)
                     # x_shot:[4,5(way),1(shot),3,80,90], x_query:[4,75(n_q*way),3,80,80]
                     x_shot, x_query = fs.split_shot_query(data.cuda(), n_way, n_shot, n_query, ep_per_batch=4)
                     label = fs.make_nk_label(n_way, n_query, ep_per_batch=4).cuda() # label for query only (based on order)
@@ -184,9 +187,8 @@ def main(config):
         t_used = utils.time_str(timer_used.t())
         t_estimate = utils.time_str(timer_used.t() / epoch * max_epoch)
 
-
         epoch_str = str(epoch) if epoch <= max_epoch else 'ex'
-        log_str = 'epoch {}, train {:.4f}|{:.4f}'.format(epoch_str, aves['tl'], aves['ta'])
+        log_str = 'epoch {}, train: loss {:.4f}| lossaux {:.4f}| acc {:.4f}'.format(epoch_str, aves['tl'], aves['tla'], aves['ta'])
         writer.add_scalars('loss', {'train': aves['tl']}, epoch)
         writer.add_scalars('acc', {'train': aves['ta']}, epoch)
 

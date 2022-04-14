@@ -28,7 +28,11 @@ class MetaBaseline(nn.Module):
 
         x_shot = x_shot.view(-1, *img_shape)    # [20, 3, 80, 80]
         x_query = x_query.view(-1, *img_shape)  # [300, 3, 80, 80]
-        x_tot = self.encoder(torch.cat([x_shot, x_query], dim=0))   # [320, 512]
+        if self.encoder.aux:
+            x_tot, _ = self.encoder(torch.cat([x_shot, x_query], dim=0))   # [320, 512]
+        else:
+            x_tot = self.encoder(torch.cat([x_shot, x_query], dim=0))  # [320, 512]
+
         x_shot, x_query = x_tot[:len(x_shot)], x_tot[-len(x_query):]  #[20, 512], [300, 512]
         x_shot = x_shot.view(*shot_shape, -1)    # [4, 5, 1, 512]
         x_query = x_query.view(*query_shape, -1) # [4, 75, 512]

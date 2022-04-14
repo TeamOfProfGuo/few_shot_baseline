@@ -99,7 +99,7 @@ class ResNet12(nn.Module):
         x4 = x4.view(x4.shape[0], x4.shape[1], -1).mean(dim=2)  # average pool [B, ch, hw]
         if self.aux:
             x3 = x3.view(x3.shape[0], x3.shape[1], -1).mean(dim=2)
-            return x3, x4
+            return x4, x3
         else:
             return x4
 
