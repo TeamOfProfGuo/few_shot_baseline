@@ -58,8 +58,10 @@ class Block(nn.Module):
 
 class ResNet12(nn.Module):
 
-    def __init__(self, channels):
+    def __init__(self, channels, aux=False):
         super().__init__()
+
+        self.aux = aux
 
         self.inplanes = 3
 
@@ -69,6 +71,8 @@ class ResNet12(nn.Module):
         self.layer4 = self._make_layer(channels[3])
 
         self.out_dim = channels[3]
+        if aux:
+            self.aux_dim = channels[2]
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -89,16 +93,20 @@ class ResNet12(nn.Module):
 
     def forward(self, x):
         x = self.layer1(x)  # 64
-        x = self.layer2(x)  # 128
-        x = self.layer3(x)  # 256
-        x = self.layer4(x)  # 512
-        x = x.view(x.shape[0], x.shape[1], -1).mean(dim=2) # average pool [B, ch, hw]
-        return x
+        x2 = self.layer2(x)  # 128
+        x3 = self.layer3(x2)  # 256
+        x4 = self.layer4(x3)  # 512
+        x4 = x4.view(x4.shape[0], x4.shape[1], -1).mean(dim=2)  # average pool [B, ch, hw]
+        if self.aux:
+            x3 = x3.view(x3.shape[0], x3.shape[1], -1).mean(dim=2)
+            return x3, x4
+        else:
+            return x4
 
 
 @register('resnet12')
-def resnet12():
-    return ResNet12([64, 128, 256, 512])
+def resnet12(**kwargs):
+    return ResNet12([64, 128, 256, 512], **kwargs)
 
 
 @register('resnet12-wide')

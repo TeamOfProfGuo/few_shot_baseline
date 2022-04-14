@@ -24,6 +24,11 @@ class Classifier(nn.Module):
         classifier_args['in_dim'] = self.encoder.out_dim
         self.classifier = models.make(classifier, **classifier_args)
 
+        self.aux = encoder_args.get('aux', False)
+        if self.aux:
+            classifier_args['in_dim'] = self.encoder.aux_dim
+            self.aux_classifier = models.make(classifier, **classifier_args)
+
         if meta_train:
             self.norm = 'norm'
             if meta_train_args['learn_temp']:
@@ -42,9 +47,15 @@ class Classifier(nn.Module):
                 self.tp = 1.0
 
     def forward(self, x):  # 用于pretraining
-        x = self.encoder(x)
-        x = self.classifier(x)
-        return x
+        if self.aux:
+            aux_x, x = self.encoder(x)
+            x = self.classifier(x)
+            x_aux = self.aux_classifier(aux_x)
+            return x, x_aux
+        else:
+            x = self.encoder(x)
+            x = self.classifier(x)
+            return x
 
     def inner_loop(self, x_shot, s_label, aug=False, init_weight=False):
 
