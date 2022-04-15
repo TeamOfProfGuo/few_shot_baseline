@@ -3,7 +3,6 @@
 import argparse
 import os
 import yaml
-import cv2
 
 import torch
 import torch.nn as nn
@@ -18,6 +17,8 @@ import models
 import utils
 import utils.few_shot as fs
 from dataset.samplers import CategoriesSampler
+
+from train_mean import extract_mean
 
 
 def main(config):
@@ -97,6 +98,10 @@ def main(config):
         model = models.load(model_sv)
     else:
         model = models.make(config['model'], **config['model_args'])
+
+    # get mean feature from base_train dataset
+    mean_list = extract_mean(config['train_dataset'], config['model_args']['encoder'], config.get('load_encoder'))
+    model.get_base_mean(mean_list)
 
     if config.get('load_encoder'):
         pretrained_dict = torch.load(config['load_encoder'])  # classifier模型with pretrained params

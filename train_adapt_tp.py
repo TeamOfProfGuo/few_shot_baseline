@@ -20,9 +20,11 @@ import utils.few_shot as fs
 from utils.few_shot import *
 from dataset.samplers import CategoriesSampler
 
+from train_mean import extract_mean
+
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--config', default='configs/train_adapt_mini_eu.yaml')
+parser.add_argument('--config', default='configs/train_adapt_mini_eu0.yaml')
 parser.add_argument('--name', default=None)
 parser.add_argument('--tag', default='pt')
 parser.add_argument('--gpu', default='0')
@@ -39,8 +41,8 @@ if svname is None:
         svname += '-' + clsfr
 if args.tag is not None:
     svname += '_' + args.tag
-save_path = os.path.join('./save', svname)
-utils.ensure_path(save_path)
+#save_path = os.path.join('./save', svname)
+#utils.ensure_path(save_path)
 #utils.set_log_path(save_path)
 #writer = SummaryWriter(os.path.join(save_path, 'tensorboard'))
 # yaml.dump(config, open(os.path.join(save_path, 'config.yaml'), 'w'))
@@ -55,7 +57,6 @@ n_train_shot = config['n_train_shot'] if config.get('n_train_shot') is not None 
 ep_per_batch = config['ep_per_batch'] if config.get('ep_per_batch') is not None else 1
 
 config['model_args']['classifier_args'] = {'n_classes': n_train_way}
-
 
 
 # 改一下这里
@@ -82,6 +83,50 @@ val_sampler = CategoriesSampler(
     n_way, n_shot + n_query,
     ep_per_batch=ep_per_batch)  # 生成每个batch idx: [320] = 4*5*(1+15)
 val_loader = DataLoader(val_dataset, batch_sampler=val_sampler, num_workers=8, pin_memory=True)  # 共200个batch
+
+#### ======================================== train_mean ========================================
+import pickle
+from dataset import make as dataset_make
+from models import make as model_make
+
+
+# =========== 计算pretrain过程中所有feature vector的mean
+# def extract_mean(train_data, encoder, encoder_path):
+
+train_data = config['train_dataset']
+encoder = config['model_args']['encoder']
+encoder_path = config.get('load_encoder')
+fpath = encoder_path.replace('pth', 'plk')  # 存储base train过程中所有feature的mean/avg
+if os.path.isfile(fpath):
+    with open(fpath, 'rb') as f:
+        data = pickle.load(f)
+
+
+# load train_data
+train_dataset = dataset_make(train_data, **{'split':'train'})
+base_loader = DataLoader(train_dataset, batch_size=64, shuffle=False, num_workers=8, pin_memory=True)
+
+# load model
+model = model_make(encoder, **{'aux': True})      # 返回中间层 ：f4,f3
+pretrained_dict = torch.load(encoder_path, map_location=lambda storage, location: storage)  # classifier模型with pretrained params
+pretrained_dict = {k.replace('encoder.',''): v for k, v in pretrained_dict['model_sd'].items() if 'encoder' in k}
+model.load_state_dict(pretrained_dict)
+
+# get training mean
+model.eval()
+out_mean, mid_mean= [], []
+with torch.no_grad():
+    for i, (inputs, _) in enumerate(base_loader):
+        out, mid = model(inputs)
+        out_mean.append(out.cpu().data.numpy())
+        mid_mean.append(mid.cpu().data.numpy())
+        if i>=2:
+            break
+
+out_mean = np.concatenate(out_mean, axis=0).mean(0)
+mid_mean = np.concatenate(mid_mean, axis=0).mean(0)
+all_info = [out_mean, mid_mean]
+
 #### ======================================== Model and Optimizer  ========================================####
 
 if config.get('load'):
@@ -107,7 +152,7 @@ for name, param in model.named_parameters():
 
 param_list = []
 for name, param in model.named_parameters():
-    if name in ['thresh', 'tp', 'temp', 'down_mid.weight']:
+    if name in ['thresh', 'tp', 'temp', 'down_mid.weight'] or 'down_mid' in name:
         param_list.append(param)
 
 optimizer, lr_scheduler = utils.make_optimizer(param_list, config['optimizer'], **config['optimizer_args'])
@@ -138,6 +183,9 @@ x_shot, x_query = fs.split_shot_query(
 
 y_shot = fs.make_nk_label(n_train_way, n_train_shot, ep_per_batch=ep_per_batch) # [100]
 y_query = fs.make_nk_label(n_train_way, n_query, ep_per_batch=ep_per_batch)  # label for query:[300]
+
+mean_list = extract_mean(config['train_dataset'], config['model_args']['encoder'],config.get('load_encoder'))
+model.get_base_mean(mean_list)
 
 ### =========== 训练模型
 self = model

@@ -146,14 +146,14 @@ class AdaptClassifier(nn.Module):
                 elif self.feat_adapt == 'idt':
                     pass
                 qw_feat = qw_feat.view(x_query.shape[0], n_way, -1)  # 75 n_query, 5way, 256channel
-                logits = utils.compute_logits_localize(qw_feat, protos, metric=self.metric)  # [75,5] 其实就是求了similarity
+                logits = utils.compute_logits_localize(qw_feat, protos, metric=self.metric, base_mean=self.base_mean)  # [75,5] 其实就是求了similarity
             else:
                 dim1, dim2 = self.fea_dim
                 sub_protos1, sub_protos2 = protos[:, 0:dim1], protos[:, dim1:]     # [5,256], [5,512]
                 sub_qwfeat1 = qw_feat[:,0:dim1].view(x_query.shape[0], n_way, -1)  # [75,5,256]
                 sub_qwfeat2 = qw_feat[:,dim1: ].view(x_query.shape[0], n_way, -1)
-                sub_logits1 = utils.compute_logits_localize(sub_qwfeat1, sub_protos1, metric=self.metric)  # low level
-                sub_logits2 = utils.compute_logits_localize(sub_qwfeat2, sub_protos2, metric=self.metric)   # high level
+                sub_logits1 = utils.compute_logits_localize(sub_qwfeat1, sub_protos1, metric=self.metric, base_mean=self.base_mean)  # low level
+                sub_logits2 = utils.compute_logits_localize(sub_qwfeat2, sub_protos2, metric=self.metric, base_mean=self.base_mean)   # high level
                 logits = sub_logits1 * self.down_mid + sub_logits2
 
             logits = logits*self.tp
@@ -220,6 +220,15 @@ class AdaptClassifier(nn.Module):
             if isinstance(module, nn.Linear):
                 print('resetting', name)
                 module.reset_parameters()
+
+    def get_base_mean(self, mean_list):
+        out_mean, mid_mean = mean_list
+        if self.feat_level == 3:
+            self.base_mean = mid_mean
+        elif self.feat_level == 4:
+            self.base_mean = out_mean
+        elif self.feat_level == 34:
+            self.base_mean = [mid_mean, out_mean]
 
 
 
