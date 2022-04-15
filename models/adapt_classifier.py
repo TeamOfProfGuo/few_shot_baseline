@@ -223,6 +223,9 @@ class AdaptClassifier(nn.Module):
 
     def get_base_mean(self, mean_list):
         out_mean, mid_mean = mean_list
+        out_mean, mid_mean = torch.from_numpy(out_mean), torch.from_numpy(mid_mean)
+        if torch.cuda.is_available():
+                out_mean, mid_mean = out_mean.cuda(), mid_mean.cuda()
         if self.feat_level == 3:
             self.base_mean = mid_mean
         elif self.feat_level == 4:
