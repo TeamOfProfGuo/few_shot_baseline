@@ -119,7 +119,7 @@ def main(config):
             train_loader = DataLoader(train_dataset, config['batch_size'], shuffle=True, num_workers=8, pin_memory=True)
 
         timer_epoch.s()
-        aves_keys = ['tl', 'tla', 'ta', 'vl', 'va']  # 当前epoch 的 train_loss, train_acc, val_loss, val_acc
+        aves_keys = ['tl', 'tla', 'ta', 'taa', 'vl', 'va', 'vaa']  # 当前epoch 的 train_loss, train_acc, val_loss, val_acc
         if eval_fs:
             for n_shot in n_shots:
                 aves_keys += ['fsa-' + str(n_shot)]
@@ -137,6 +137,7 @@ def main(config):
             loss_aux = F.cross_entropy(logits_aux, label)
             loss_total = loss + loss_aux*config['aux_weight']
             acc = utils.compute_acc(logits, label)
+            acc_aux = utils.compute_acc(logits_aux, label)
 
             optimizer.zero_grad()
             loss_total.backward()
@@ -145,6 +146,7 @@ def main(config):
             aves['tl'].add(loss.item())
             aves['tla'].add(loss_aux.item())
             aves['ta'].add(acc)
+            aves['taa'].add(acc_aux)
 
             logits = None; loss = None
 
@@ -155,12 +157,14 @@ def main(config):
                 if torch.cuda.is_available():
                     data, label = data.cuda(), label.cuda()
                 with torch.no_grad():
-                    logits, _ = model(data)
+                    logits, logits_aux = model(data)
                     loss = F.cross_entropy(logits, label)
                     acc = utils.compute_acc(logits, label)
+                    acc_aux = utils.compute_acc(logits_aux, label)
                 
                 aves['vl'].add(loss.item())
                 aves['va'].add(acc)
+                aves['vaa'].add(acc_aux)
 
         if eval_fs and (epoch % ef_epoch == 0 or epoch == max_epoch + 1):
             fs_model.eval()
@@ -188,12 +192,13 @@ def main(config):
         t_estimate = utils.time_str(timer_used.t() / epoch * max_epoch)
 
         epoch_str = str(epoch) if epoch <= max_epoch else 'ex'
-        log_str = 'epoch {}, train: loss {:.4f}| lossaux {:.4f}| acc {:.4f}'.format(epoch_str, aves['tl'], aves['tla'], aves['ta'])
+        log_str = 'epoch {}, train: loss {:.4f}| lossaux {:.4f}| acc {:.4f}| accaux {:.4f}'.format(
+            epoch_str, aves['tl'], aves['tla'], aves['ta'], aves['taa'])
         writer.add_scalars('loss', {'train': aves['tl']}, epoch)
         writer.add_scalars('acc', {'train': aves['ta']}, epoch)
 
         if eval_val:
-            log_str += ', val {:.4f}|{:.4f}'.format(aves['vl'], aves['va'])
+            log_str += ', val: vl {:.4f}| va {:.4f}| vaa {:.4f}'.format(aves['vl'], aves['va'], aves['vaa'])
             writer.add_scalars('loss', {'val': aves['vl']}, epoch)
             writer.add_scalars('acc', {'val': aves['va']}, epoch)
 

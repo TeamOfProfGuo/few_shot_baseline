@@ -16,6 +16,6 @@ singularity exec --nv \
 /scratch/work/public/singularity/cuda11.2.2-cudnn8-devel-ubuntu20.04.sif \
 /bin/bash -c "
 source /ext3/env.sh;
-python train_classifier_aux.py --config configs/train_classifier_mini_aux.yaml > train_cls_aux.log 2>&1
+python train_classifier_aux.py --config configs/train_classifier_mini_aux5.yaml --tag w5 > train_cls_aux5.log 2>&1
 "
 echo "finish"
