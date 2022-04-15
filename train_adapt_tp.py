@@ -9,7 +9,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from tqdm import tqdm
 from torch.utils.data import DataLoader
 from tensorboardX import SummaryWriter
 from torchvision import transforms
@@ -23,9 +22,9 @@ from dataset.samplers import CategoriesSampler
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--config', default='configs/train_adapt_mini_v2.yaml')
+parser.add_argument('--config', default='configs/train_adapt_mini_eu.yaml')
 parser.add_argument('--name', default=None)
-parser.add_argument('--tag', default=None)
+parser.add_argument('--tag', default='pt')
 parser.add_argument('--gpu', default='0')
 args = parser.parse_args([])
 
@@ -56,6 +55,11 @@ n_train_shot = config['n_train_shot'] if config.get('n_train_shot') is not None 
 ep_per_batch = config['ep_per_batch'] if config.get('ep_per_batch') is not None else 1
 
 config['model_args']['classifier_args'] = {'n_classes': n_train_way}
+
+
+
+# 改一下这里
+ep_per_batch = 2
 
 # train
 train_dataset = dataset.make(config['train_dataset'], **config['train_dataset_args'])  # 返回x:tensor[3,80,80],y:int
@@ -103,14 +107,14 @@ for name, param in model.named_parameters():
 
 param_list = []
 for name, param in model.named_parameters():
-    if name in ['thresh', 'tp', 'temp', 'down_mid.weight'] or 'down_mid' in name:
+    if name in ['thresh', 'tp', 'temp', 'down_mid.weight']:
         param_list.append(param)
 
 optimizer, lr_scheduler = utils.make_optimizer(param_list, config['optimizer'], **config['optimizer_args'])
 
 # optimizer, lr_scheduler = utils.make_optimizer(model.parameters(), config['optimizer'], **config['optimizer_args'])
 
-###==== set up
+###================================================== train ==================================================
 
 #save_epoch = config.get('save_epoch')
 
@@ -125,21 +129,21 @@ for i, (data, label) in enumerate(train_loader):  # data[400,3,80,80],_[400]
     if i>=1:
         break
 
+
 ### ========== 处理数据
 if torch.cuda.is_available():
     data, label = data.cuda(), label.cuda()
 x_shot, x_query = fs.split_shot_query(
     data, n_train_way, n_train_shot, n_query, ep_per_batch=ep_per_batch)  # x_shot:[4,5,5,3,80,80], x_query:[4,75,3,80,80]
-x_shot, x_query = x_shot.squeeze(0), x_query.squeeze(0) # [5,5,3,80,80], way,shot x_query[75, 3, 80, 80]
-x_shot = x_shot.view(n_train_way*n_train_shot, *x_shot.shape[-3:]) # [25,3,80,80]
-y_shot = fs.make_nk_label(n_train_way, n_train_shot, ep_per_batch=ep_per_batch)
+
+y_shot = fs.make_nk_label(n_train_way, n_train_shot, ep_per_batch=ep_per_batch) # [100]
 y_query = fs.make_nk_label(n_train_way, n_query, ep_per_batch=ep_per_batch)  # label for query:[300]
 
 ### =========== 训练模型
 self = model
 
 model.train()
-logits0, logits = model.outer_loop(x_shot, x_query, y_shot, y_query, meta_args)  # [75, 5]
+logits0, logits = model.outer_loop(x_shot, x_query, y_shot, meta_args)  # [75, 5]
 # print 现在的参数值
 print('current thresh', model.state_dict()['thresh'])
 print('current tp', model.state_dict()['tp'])

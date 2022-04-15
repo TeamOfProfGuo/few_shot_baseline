@@ -10,8 +10,8 @@ import pickle
 import numpy as np
 from torch.utils.data import DataLoader
 
-from ..dataset import make as dataset_make
-from ..models import make as model_make
+from dataset import make as dataset_make
+from models import make as model_make
 
 
 # =========== 计算pretrain过程中所有feature vector的mean
@@ -53,5 +53,5 @@ def extract_mean(train_data, encoder, encoder_path):
 
 if __name__ == '__main__':
     out_mean, mid_mean = extract_mean('mini-imagenet', 'resnet12',
-                                         '../save/classifier_mini-imagenet_resnet12/epoch-last.pth')
+                                      'save/classifier_mini-imagenet_resnet12/epoch-last.pth')
     print('out mean shape'.format(out_mean.shape))

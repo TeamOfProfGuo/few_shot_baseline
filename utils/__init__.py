@@ -11,8 +11,6 @@ from torch.optim import SGD, Adam
 from torch.optim.lr_scheduler import MultiStepLR
 
 from . import few_shot
-from . train_mean import extract_mean
-
 
 _log_path = None
 
@@ -123,9 +121,6 @@ def compute_logits_localize(q_feat, protos, metric='cos', base_mean=None):
             q_feat = F.normalize(q_feat, dim=-1)  # [75, 5, 256]
             sim = -(q_feat - protos.unsqueeze(0)).pow(2).sum(dim=-1)  # [75,5,256]
             return sim
-
-
-
 
 
 def compute_acc(logits, label, reduction='mean'):
