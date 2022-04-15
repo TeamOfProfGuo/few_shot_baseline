@@ -16,6 +16,6 @@ singularity exec --nv \
 /scratch/work/public/singularity/cuda11.2.2-cudnn8-devel-ubuntu20.04.sif \
 /bin/bash -c "
 source /ext3/env.sh;
-python utils/train_mean.py  > train_mean.log 2>&1
+python train_mean.py  > train_mean.log 2>&1
 "
 echo "finish"
