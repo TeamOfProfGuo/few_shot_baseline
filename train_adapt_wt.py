@@ -131,7 +131,9 @@ def main(config):
 
     for epoch in range(1, max_epoch + 1):
         timer_epoch.s()
-        aves_keys = ['tl', 'ta', 'ta0', 'vl', 'va', 'va0', 'tvl', 'tva', 'tva0']  # 'a0': base_classifier Acc, 'a': Localized Proto Acc, 'l': loss
+        aves_keys = ['tl', 'ta0', 'ta', 'ta1', 'ta2', 'tap',
+                     'vl', 'va0', 'va', 'va1', 'va2', 'vap',
+                     'tvl','tva0','tva', 'tva1', 'tva2', 'tvap']  # 'a0': base_classifier Acc, 'a': Localized Proto Acc, 'l': loss
         aves = {k: utils.Averager() for k in aves_keys}
 
         ###==== train
@@ -146,18 +148,27 @@ def main(config):
             y_shot = fs.make_nk_label(n_train_way, n_train_shot, ep_per_batch=ep_per_batch).cuda()
             y_query = fs.make_nk_label(n_train_way, n_query, ep_per_batch=ep_per_batch).cuda()  # label for query:[300]
 
-            logits0, logits = model.outer_loop(x_shot, x_query, y_shot, meta_args)  # [75, 5]
+            logits0, logits, sub1, sub2 = model.outer_loop(x_shot, x_query, y_shot, meta_args)  # [75, 5], sub1 low level
             loss = F.cross_entropy(logits, y_query)
             acc0 = utils.compute_acc(logits0, y_query)
             acc = utils.compute_acc(logits, y_query)
+            lacc = utils.compute_acc(sub1, y_query)
+            hacc = utils.compute_acc((sub2, y_query))
+
+            p1 = F.softmax(sub1 * 2.0, dim=-1)
+            p2 = F.softmax(sub2 * 2.0, dim=-1)
+            p = (p1 + p2)/2
+            pacc = utils.compute_acc(p, y_query)
+
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
             aves['tl'].add(loss.item())
-            aves['ta'].add(acc)
             aves['ta0'].add(acc0)
+            aves['ta'].add(acc)
+
 
             if i%10==0 or (epoch==1 and i%2==0):
                 t_used = utils.time_str(timer_used.t())

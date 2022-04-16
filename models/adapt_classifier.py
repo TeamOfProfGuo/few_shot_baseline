@@ -27,6 +27,7 @@ class AdaptClassifier(nn.Module):
         self.cam_args = cam_args
 
         self.metric = meta_train_args.get('dist', 'cos')
+        self.base_mean = None                                         # this is placeholder, need to update before using eu dist with centering
 
         if meta_train:
 
@@ -109,6 +110,9 @@ class AdaptClassifier(nn.Module):
 
         q_logits0, q_logits = [], []
 
+        if len(str(self.feat_level)) == 2:
+            sub1, sub2 = [], []
+
         for ep in range(eps):  # 针对其中一个episode predict logits for the query images
             x_shot = x_s[ep].view(n_way*n_shot, ch, h, w)
             y_shot = y_s[ep]
@@ -162,9 +166,19 @@ class AdaptClassifier(nn.Module):
             q_logits0.append(logits0)
             q_logits.append(logits)
 
+            if len(str(self.feat_level)) == 2:
+                sub1.append(sub_logits1)  # low level
+                sub2.append(sub_logits2)
+
         q_logits0 = torch.cat(q_logits0, dim=0)
         q_logits = torch.cat(q_logits, dim=0)
-        return q_logits0, q_logits
+
+        if len(str(self.feat_level))==1:
+            return q_logits0, q_logits
+        else:
+            sub1 = torch.cat(sub1, dim=0)
+            sub2 = torch.cat(sub2, dim=0)
+            return q_logits0, q_logits, sub1, sub2
 
     def get_CAM(self, x, y=None):  # accept同一episode中的多张图片 x: [B,3,h,w] y:[1]
         if self.backbone == 'resnet12':

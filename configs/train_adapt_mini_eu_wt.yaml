@@ -1,0 +1,33 @@
+train_dataset: mini-imagenet
+train_dataset_args: {split: train}  # outer look not need for resize augment
+val_dataset: mini-imagenet
+val_dataset_args: {split: val}
+tval_dataset: mini-imagenet
+tval_dataset_args: {split: test}
+
+model: adapt
+model_args:
+    encoder: resnet12
+    encoder_args: {}
+    classifier: linear-classifier
+    classifier_args: {n_classes: 64}   # num of classes should == n_way
+    meta_train: True
+    cam_args: {norm: 'norm', learn_thresh: True, thresh: 0.0, learn_temp: False, temp: 2.0,}
+    meta_train_args: {learn_tp: False, feat_level: 34, feat_adapt: 'wt', dist: 'sqr'}
+
+    # note in this version, we need to include at least feature from two levels, weighted avg of the similarity of f3 and f4
+
+load_encoder: ./save/cls_aux_mini-imagenet_resnet12_w5/max-va.pth
+
+n_way: 5
+n_shot: 5
+n_query: 15
+train_batches: 100
+ep_per_batch: 4
+
+max_epoch: 10   # max epoch for meta train
+optimizer: sgd
+optimizer_args: {lr: 0.001, weight_decay: 5.e-4}
+
+visualize_datasets: False
+
