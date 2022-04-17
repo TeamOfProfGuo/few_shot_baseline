@@ -152,14 +152,13 @@ def main(config):
             loss = F.cross_entropy(logits, y_query)
             acc0 = utils.compute_acc(logits0, y_query)
             acc = utils.compute_acc(logits, y_query)
-            lacc = utils.compute_acc(sub1, y_query)
-            hacc = utils.compute_acc((sub2, y_query))
+            acc1 = utils.compute_acc(sub1, y_query)
+            acc2 = utils.compute_acc(sub2, y_query)
 
-            p1 = F.softmax(sub1 * 2.0, dim=-1)
+            p1 = F.softmax(sub1 * 2.0, dim=-1)      # temperature = 2.0 可以调节
             p2 = F.softmax(sub2 * 2.0, dim=-1)
             p = (p1 + p2)/2
-            pacc = utils.compute_acc(p, y_query)
-
+            accp = utils.compute_acc(p, y_query)
 
             optimizer.zero_grad()
             loss.backward()
@@ -168,24 +167,26 @@ def main(config):
             aves['tl'].add(loss.item())
             aves['ta0'].add(acc0)
             aves['ta'].add(acc)
-
+            aves['ta1'].add(acc1)
+            aves['ta2'].add(acc2)
+            aves['tap'].add(accp)
 
             if i%10==0 or (epoch==1 and i%2==0):
                 t_used = utils.time_str(timer_used.t())
-                log_msg = 'epoch {}, episode {}, Cls Acc {:.4f}, Localized Cls Acc {:.4f}, Query Loss {:.4f} ' \
-                          'AllTime {} thresh {:.4f} tp {:.4f}'.format(
-                    epoch, i, acc0, acc, loss.item(),
-                    t_used, model.thresh, model.tp)
+                log_msg = 'epoch {}, episode {}, Acc0 {:.4f}| Acc {:.4f}| Acc1 {:.4f}| Acc2 {:.4f}| AccP {:.4f}| ' \
+                          'QLoss {:.4f} AllTime {} thresh {:.4f} tp {:.4f}'.format(
+                    epoch, i, acc0, acc, acc1, acc2, accp,
+                    loss.item(), t_used, model.thresh, model.tp)
                 if isinstance(model.down_mid, nn.Parameter):
                      log_msg += ', wt_low {:.4f}'.format(model.down_mid)
                 utils.log(log_msg)
 
         t_epoch = utils.time_str(timer_epoch.t())
         utils.log('=========finish epoch {}========== \n '
-                  'Epoch Cls Acc {:.4f}, Localized Cls Acc {:.4f}, Query Loss {:.4f}, '
-                  'EpochTime {}, thresh {:.4f}, tp {:.4f}'.format(
-            epoch, aves['ta0'].v, aves['ta'].v, aves['tl'].v,
-            t_epoch, model.thresh, model.tp ))
+                  'Epoch Acc0 {:.4f}| Acc {:.4f}| Acc1 {:.4f}| Acc2 {:.4f}| AccP {:.4f}| '
+                  'Query Loss {:.4f}, EpochTime {}, thresh {:.4f}, tp {:.4f}'.format(
+            epoch, aves['ta0'].v, aves['ta'].v, aves['ta1'].v, aves['ta2'].v, aves['tap'].v,
+            aves['tl'].v, t_epoch, model.thresh, model.tp ))
 
         # ========= eval
         model.eval()
@@ -202,19 +203,29 @@ def main(config):
                 y_shot = fs.make_nk_label(n_way, n_shot, ep_per_batch=ep_per_batch).cuda()
                 y_query = fs.make_nk_label(n_way, n_query, ep_per_batch=ep_per_batch).cuda()  # label for query:[300]
 
-                logits0, logits = model.outer_loop(x_shot, x_query, y_shot, meta_args)  # [75, 5]
+                logits0, logits, sub1, sub2 = model.outer_loop(x_shot, x_query, y_shot, meta_args)  # [75, 5]
                 loss = F.cross_entropy(logits, y_query)
                 acc0 = utils.compute_acc(logits0, y_query)
                 acc = utils.compute_acc(logits, y_query)
+                acc1 = utils.compute_acc(sub1, y_query)
+                acc2 = utils.compute_acc(sub2, y_query)
+
+                p1 = F.softmax(sub1 * 2.0, dim=-1)  # temperature = 2.0 可以调节
+                p2 = F.softmax(sub2 * 2.0, dim=-1)
+                p = (p1 + p2) / 2
+                accp = utils.compute_acc(p, y_query)
 
                 aves[name_l].add(loss.item())   # loss
                 aves[name_a].add(acc)           # localized cls acc
                 aves[name_a+'0'].add(acc0)      # base cls acc
+                aves[name_a+'1'].add(acc1)
+                aves[name_a+'2'].add(acc2)
+                aves[name_a+'p'].add(accp)
         utils.log('=========finish epoch {}========== \n '
-                  'val acc0 {:.4f}, val acc {:.4f}, val loss {:.4f}, '
-                  'tval acc0 {:.4f}, tval acc {:.4f}, tval loss {:.4f}'.format(
-            epoch, aves['va0'].v, aves['va'].v, aves['vl'].v,
-                   aves['tva0'].v, aves['tva'].v, aves['tvl'].v
+                  'Val Acc0 {:.4f} |Acc {:.4f} |Acc1 {:.4f}| Acc2 {:.4f}| AccP {:.4f}| loss {:.4f} || '
+                  'TVal Acc0 {:.4f} |Acc {:.4f} |Acc1 {:.4f}| Acc2 {:.4f}| AccP {:.4f}| loss {:.4f}'.format(
+            epoch, aves['va0'].v, aves['va'].v, aves['va1'].v, aves['va2'].v, aves['vap'].v, aves['vl'].v,
+                   aves['tva0'].v, aves['tva'].v,  aves['tva1'].v,  aves['tva2'].v,  aves['tvap'].v, aves['tvl'].v
         ))
 
 

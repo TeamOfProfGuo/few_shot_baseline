@@ -16,6 +16,6 @@ singularity exec --nv \
 /scratch/work/public/singularity/cuda11.2.2-cudnn8-devel-ubuntu20.04.sif \
 /bin/bash -c "
 source /ext3/env.sh;
-python train_adapt.py --config configs/train_adapt_mini_eu0.yaml --tag f4_eu0 > train_f4_eu0.log 2>&1
+python train_adapt_wt.py --config configs/train_adapt_mini_eu_wt.yaml --tag wu_awt > train_eu_awt.log 2>&1
 "
 echo "finish"
